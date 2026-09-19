@@ -65,7 +65,7 @@ func (m *Mutator) FindChildPosition(
 	existingIndividuals []*model.Individual,
 	streams *prng.Streams,
 ) (float64, float64, bool) {
-	deltaAngle := 3.0 // 3 градуса на сфере
+	deltaAngle := 3.0   // 3 градуса на сфере
 	minDistRad := 0.025 // минимальное угловое расстояние (~1.4 градуса)
 
 	// 8 азимутов (N, NE, E, SE, S, SW, W, NW)

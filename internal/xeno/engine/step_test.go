@@ -3,9 +3,9 @@ package engine_test
 import (
 	"testing"
 
-	"github.com/rs/zerolog"
 	"github.com/ix1ax/nwstep-hackaton-2026/golang/internal/xeno/experiments"
 	"github.com/ix1ax/nwstep-hackaton-2026/golang/internal/xeno/model"
+	"github.com/rs/zerolog"
 )
 
 func TestEngine_DeterminismAndChecksum_AllWorlds(t *testing.T) {

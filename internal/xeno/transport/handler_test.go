@@ -8,8 +8,8 @@ import (
 	"testing"
 
 	"github.com/gofiber/fiber/v2"
-	"github.com/rs/zerolog"
 	"github.com/ix1ax/nwstep-hackaton-2026/golang/internal/xeno"
+	"github.com/rs/zerolog"
 )
 
 func setupTestApp() *fiber.App {

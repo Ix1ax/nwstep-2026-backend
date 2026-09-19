@@ -1,17 +1,20 @@
 package experiments
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
+	"regexp"
 	"sync"
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/rs/zerolog"
 	"github.com/ix1ax/nwstep-hackaton-2026/golang/internal/xeno/engine"
 	"github.com/ix1ax/nwstep-hackaton-2026/golang/internal/xeno/environment"
 	"github.com/ix1ax/nwstep-hackaton-2026/golang/internal/xeno/model"
 	"github.com/ix1ax/nwstep-hackaton-2026/golang/internal/xeno/prng"
+	"github.com/rs/zerolog"
 )
 
 var (
@@ -21,27 +24,28 @@ var (
 
 // Experiment инкапсулирует симуляцию одного мира и его сообществ (ТЗ v2)
 type Experiment struct {
-	mu             sync.RWMutex
-	ID             string                  `json:"id"`
-	Name           string                  `json:"name"`
-	WorldID        string                  `json:"worldId"`
-	Mode           model.Mode              `json:"mode"`
-	Status         model.ExperimentStatus  `json:"status"`
-	Seed           uint64                  `json:"seed"`
-	Speed          int                     `json:"speed"` // 1x, 2x, 5x
-	Parameters     model.Parameters        `json:"parameters"`
-	Interventions  []*model.Intervention   `json:"interventions"`
-	State          *engine.StepState       `json:"-"`
-	Engine         *engine.Engine          `json:"-"`
-	InitialSnapshot *model.StateSnapshot   `json:"initialSnapshot"`
-	LatestSnapshot *model.StateSnapshot    `json:"latestSnapshot"`
-	MetricsHistory []*model.MetricsSnapshot `json:"-"`
-	StopChan       chan struct{}           `json:"-"`
-	Log            zerolog.Logger          `json:"-"`
-	CreatedAt      time.Time               `json:"createdAt"`
-	UpdatedAt      time.Time               `json:"updatedAt"`
+	mu              sync.RWMutex
+	ID              string                   `json:"id"`
+	Name            string                   `json:"name"`
+	WorldID         string                   `json:"worldId"`
+	Mode            model.Mode               `json:"mode"`
+	Status          model.ExperimentStatus   `json:"status"`
+	Seed            uint64                   `json:"seed"`
+	Speed           int                      `json:"speed"` // 1x, 2x, 5x
+	Parameters      model.Parameters         `json:"parameters"`
+	Interventions   []*model.Intervention    `json:"interventions"`
+	State           *engine.StepState        `json:"-"`
+	Engine          *engine.Engine           `json:"-"`
+	InitialSnapshot *model.StateSnapshot     `json:"initialSnapshot"`
+	LatestSnapshot  *model.StateSnapshot     `json:"latestSnapshot"`
+	MetricsHistory  []*model.MetricsSnapshot `json:"-"`
+	StopChan        chan struct{}            `json:"-"`
+	Log             zerolog.Logger           `json:"-"`
+	CreatedAt       time.Time                `json:"createdAt"`
+	UpdatedAt       time.Time                `json:"updatedAt"`
 
-	broadcastFunc func(snapshot *model.StateSnapshot, expID string)
+	loopGeneration uint64
+	broadcastFunc  func(snapshot *model.StateSnapshot, expID string)
 }
 
 // Manager управляет жизненным циклом экспериментов в памяти процесса
@@ -150,6 +154,10 @@ func (m *Manager) CreateExperiment(
 	}
 
 	exp.MetricsHistory = append(exp.MetricsHistory, &initSnapshot.Metrics)
+	initSnapshot.Mode = mode
+	initSnapshot.Flow = 1
+	initSnapshot.Noise = 1
+	initSnapshot.Interventions = interventions
 	m.experiments[id] = exp
 
 	return exp
@@ -189,15 +197,23 @@ func (exp *Experiment) SendCommand(cmd string, speed int) error {
 		if exp.Status == model.StatusRunning {
 			return nil
 		}
+		if exp.State.Tick >= 2000 {
+			return errors.New("experiment completed")
+		}
+		if speed == 1 || speed == 2 || speed == 5 {
+			exp.Speed = speed
+		}
 		exp.Status = model.StatusRunning
 		exp.UpdatedAt = time.Now()
-		go exp.runLoop()
+		exp.loopGeneration++
+		go exp.runLoop(exp.loopGeneration)
 
 	case "pause":
 		if exp.Status != model.StatusRunning {
 			return nil
 		}
 		exp.Status = model.StatusPaused
+		exp.loopGeneration++
 		exp.UpdatedAt = time.Now()
 
 	case "step":
@@ -209,6 +225,7 @@ func (exp *Experiment) SendCommand(cmd string, speed int) error {
 			exp.Status = model.StatusError
 			return err
 		}
+		snapshot.Status = exp.Status
 		exp.LatestSnapshot = snapshot
 		exp.MetricsHistory = append(exp.MetricsHistory, metrics)
 		exp.UpdatedAt = time.Now()
@@ -229,11 +246,17 @@ func (exp *Experiment) SendCommand(cmd string, speed int) error {
 		return fmt.Errorf("unknown command: %s", cmd)
 	}
 
+	cp := *exp.LatestSnapshot
+	cp.Status = exp.Status
+	exp.LatestSnapshot = &cp
 	return nil
 }
 
 // Replay воспроизводит симуляцию от такт 0 до targetTick и проверяет контрольную сумму (раздел 14 ТЗ v2)
 func (exp *Experiment) Replay(targetTick int64) (*model.StateSnapshot, error) {
+	if targetTick < 0 || targetTick > 2000 {
+		return nil, errors.New("targetTick must be between 0 and 2000")
+	}
 	exp.mu.Lock()
 	defer exp.mu.Unlock()
 
@@ -299,6 +322,9 @@ func (exp *Experiment) Replay(targetTick int64) (*model.StateSnapshot, error) {
 		metricsHistory = append(metricsHistory, m)
 	}
 
+	latestSnap.Status = model.StatusPaused
+	latestSnap.Mode = stState.Mode
+	exp.Status = model.StatusPaused
 	exp.State = stState
 	exp.LatestSnapshot = latestSnap
 	exp.MetricsHistory = metricsHistory
@@ -307,12 +333,12 @@ func (exp *Experiment) Replay(targetTick int64) (*model.StateSnapshot, error) {
 	return latestSnap, nil
 }
 
-func (exp *Experiment) runLoop() {
+func (exp *Experiment) runLoop(generation uint64) {
 	exp.Log.Info().Msg("Starting simulation loop")
 
 	for {
 		exp.mu.Lock()
-		if exp.Status != model.StatusRunning {
+		if exp.Status != model.StatusRunning || generation != exp.loopGeneration {
 			exp.mu.Unlock()
 			break
 		}
@@ -331,6 +357,7 @@ func (exp *Experiment) runLoop() {
 
 		if metrics.Population == 0 {
 			exp.Status = model.StatusCompleted
+			snapshot.Status = exp.Status
 			exp.Log.Info().Msg("Simulation completed: extinction")
 			exp.mu.Unlock()
 			if exp.broadcastFunc != nil {
@@ -341,6 +368,7 @@ func (exp *Experiment) runLoop() {
 
 		if snapshot.Tick >= 2000 {
 			exp.Status = model.StatusCompleted
+			snapshot.Status = exp.Status
 			exp.Log.Info().Msg("Simulation completed: target tick 2000 reached")
 			exp.mu.Unlock()
 			if exp.broadcastFunc != nil {
@@ -360,5 +388,136 @@ func (exp *Experiment) runLoop() {
 		baseDelay := 100 * time.Millisecond
 		actualDelay := baseDelay / time.Duration(speed)
 		time.Sleep(actualDelay)
+	}
+}
+
+// View returns a detached consistent copy for all transports and exporters.
+func (exp *Experiment) View() *Experiment {
+	exp.mu.RLock()
+	defer exp.mu.RUnlock()
+	b, _ := json.Marshal(exp)
+	var cp Experiment
+	_ = json.Unmarshal(b, &cp)
+	cp.MetricsHistory = make([]*model.MetricsSnapshot, len(exp.MetricsHistory))
+	for i, m := range exp.MetricsHistory {
+		v := *m
+		cp.MetricsHistory[i] = &v
+	}
+	if cp.LatestSnapshot != nil {
+		cp.LatestSnapshot.Status = cp.Status
+	}
+	return &cp
+}
+func (exp *Experiment) AddIntervention(it model.Intervention) (*model.Intervention, error) {
+	exp.mu.Lock()
+	defer exp.mu.Unlock()
+	if exp.State.Tick >= 2000 {
+		return nil, errors.New("experiment reached 2000 ticks; create a new experiment")
+	}
+	if math.IsNaN(it.Value) || math.IsInf(it.Value, 0) {
+		return nil, errors.New("invalid value")
+	}
+	for _, v := range it.Params {
+		if math.IsNaN(v) || math.IsInf(v, 0) {
+			return nil, errors.New("invalid parameter")
+		}
+	}
+	switch it.Type {
+	case "set_flow", "set_noise":
+		if it.Value < 0 || it.Value > 10 {
+			return nil, errors.New("value must be 0..10")
+		}
+	case "impulse", "perturbation", "depletion":
+		if it.Duration == 0 {
+			it.Duration = 60
+		}
+		if it.Duration < 1 || it.Duration > 1000 {
+			return nil, errors.New("duration must be 1..1000")
+		}
+	case "toggle_mutations":
+		if it.Value != 0 && it.Value != 1 {
+			return nil, errors.New("mutations must be 0 or 1")
+		}
+	case "set_mode":
+		if !ValidMode(model.Mode(it.TargetID)) {
+			return nil, errors.New("invalid mode")
+		}
+	case "set_channel":
+		if exp.State.Channels[it.TargetID] == nil {
+			return nil, errors.New("unknown channel")
+		}
+		for k, v := range it.Params {
+			if (k == "power" && (v < 0 || v > 20)) || (k == "loss" && (v < 0 || v > 0.9)) || (k == "delay" && (v < 1 || v > 100 || v != math.Trunc(v))) {
+				return nil, errors.New("invalid channel parameter")
+			}
+		}
+	case "add_inoculum":
+		n := it.Params["count"]
+		if n == 0 {
+			n = 6
+		}
+		if n < 1 || n > 24 || n != math.Trunc(n) {
+			return nil, errors.New("count must be 1..24")
+		}
+		if len(exp.State.Individuals)+int(n) > exp.Parameters.MaxPopulation || len(exp.State.Colonies) >= exp.State.World.Model.MaxColonies {
+			return nil, errors.New("population or colony limit reached")
+		}
+		if math.Abs(it.Params["lat"]) > 90 || math.Abs(it.Params["lng"]) > 180 || it.Value < 0 || it.Value > exp.Parameters.EMax || it.Params["biomass"] < 0 || it.Params["biomass"] > 20 || it.Params["spread"] < 0 || it.Params["spread"] > 15 || it.Params["power"] < 0 || it.Params["power"] > 20 {
+			return nil, errors.New("invalid colony parameters")
+		}
+		if len([]rune(it.Name)) > 80 {
+			return nil, errors.New("name too long")
+		}
+		if it.Color != "" && !regexp.MustCompile(`^#[0-9a-fA-F]{6}$`).MatchString(it.Color) {
+			return nil, errors.New("invalid color")
+		}
+		if it.Genome != nil {
+			g := it.Genome
+			sum := g.WeightEnergy + g.WeightDeficit + g.WeightRelief + g.WeightReproduction + g.WeightCost
+			for _, v := range []float64{g.WeightEnergy, g.WeightDeficit, g.WeightRelief, g.WeightReproduction, g.WeightCost, g.Lambda, g.HThreshold} {
+				if v < 0 || v > 1 || math.IsNaN(v) {
+					return nil, errors.New("invalid genome")
+				}
+			}
+			if sum <= 0 {
+				return nil, errors.New("empty genome")
+			}
+			g.WeightEnergy /= sum
+			g.WeightDeficit /= sum
+			g.WeightRelief /= sum
+			g.WeightReproduction /= sum
+			g.WeightCost /= sum
+		}
+	default:
+		return nil, errors.New("unknown intervention")
+	}
+	it.ID = "event-" + uuid.NewString()
+	it.Tick = exp.State.Tick + 1
+	it.Sequence = len(exp.Interventions) + 1
+	exp.Interventions = append(exp.Interventions, &it)
+	exp.State.Interventions = exp.Interventions
+	return &it, nil
+}
+func ValidMode(mode model.Mode) bool {
+	return mode == model.ModeReactive || mode == model.ModeAdaptive || mode == model.ModeEvolutionary
+}
+
+// Preview is read-only: scrubbing a recording never rewinds the source experiment.
+func (exp *Experiment) Preview(tick int64) (*model.StateSnapshot, error) {
+	v := exp.View()
+	if tick < 0 || tick > v.LatestSnapshot.Tick {
+		return nil, errors.New("tick outside recording")
+	}
+	tmp := NewManager(zerolog.Nop()).CreateExperiment(v.Name, v.WorldID, v.Mode, v.Seed, nil)
+	tmp.Parameters = v.Parameters
+	tmp.Interventions = v.Interventions
+	return tmp.Replay(tick)
+}
+func (m *Manager) Remove(id string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if exp := m.experiments[id]; exp != nil {
+		exp.SendCommand("pause", 1)
+		delete(m.experiments, id)
 	}
 }

@@ -115,12 +115,7 @@ func BuildWorldScenario(
 
 	// 3. Создаем физические каналы связи
 	addChannelPair := func(from, to model.Individual) {
-		dist := environment.GreatCircleDistance(from.Lat, from.Lng, to.Lat, to.Lng)
-		loss := 0.05 + 0.3*dist
-		delay := 1
-		if dist > 0.3 {
-			delay = 2
-		}
+		dist, loss, delay := environment.NewEnvironmentModule(*world).ChannelProperties(&from, &to)
 
 		channels = append(channels, model.Channel{
 			ID:          fmt.Sprintf("ch-%s-%s", from.ID, to.ID),
@@ -169,32 +164,7 @@ func BuildWorldScenario(
 	addChannelPair(individuals[5], individuals[9])
 
 	// 4. Расписание контролируемых воздействий (раздел 8 ТЗ v2)
-	interventions := []*model.Intervention{
-		{
-			ID:       "inv-001",
-			Tick:     100,
-			Sequence: 0,
-			Type:     "impulse",
-			TargetID: world.ID,
-			Value:    2.0, // Импульс притока энергии
-		},
-		{
-			ID:       "inv-002",
-			Tick:     300,
-			Sequence: 0,
-			Type:     "perturbation",
-			TargetID: world.ID,
-			Value:    3.0, // Возмущение / буря
-		},
-		{
-			ID:       "inv-003",
-			Tick:     600,
-			Sequence: 0,
-			Type:     "depletion",
-			TargetID: world.ID,
-			Value:    0.0, // Истощение притока
-		},
-	}
+	interventions := []*model.Intervention{}
 
 	totalInitialStored := 0.0
 	for _, ind := range individuals {

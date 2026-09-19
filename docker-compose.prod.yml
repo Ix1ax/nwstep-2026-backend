@@ -9,6 +9,10 @@ services:
       - postgres
       - redis
       - minio
+    environment:
+      XENO_DATA_DIR: /data/research
+    volumes:
+      - research_data:/data/research
     env_file:
       - .env
     networks:
@@ -46,6 +50,7 @@ services:
     restart: always
 
 volumes:
+  research_data:
   postgres_data:
   minio_data:
 

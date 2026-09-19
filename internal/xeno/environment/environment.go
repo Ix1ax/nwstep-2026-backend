@@ -60,4 +60,3 @@ func NewEnvironmentModule(world model.World) EnvironmentModule {
 		return NewEarthEnvironment(world)
 	}
 }
-

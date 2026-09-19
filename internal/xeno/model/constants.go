@@ -37,12 +37,12 @@ type Parameters struct {
 	ReserveTarget        float64 `json:"reserveTarget"`        // Целевой резерв безопасности (EU, 10)
 
 	// Веса функции полезности по умолчанию
-	H                 float64 `json:"h"`                 // Порог переключения с действия STORE (0.005)
-	BaseEnergyWeight  float64 `json:"baseEnergyWeight"`  // Базовый вес накопления энергии (0.20)
-	BaseSafety        float64 `json:"baseSafety"`        // Базовый вес безопасности (0.35)
-	BaseCostWeight    float64 `json:"baseCostWeight"`    // Базовый вес стоимости (0.05)
-	ReferenceInflow   float64 `json:"referenceInflow"`   // Опорный приток для нормирования памяти (1.0 EU/такт)
-	NoiseAmplitude    float64 `json:"noiseAmplitude"`    // Амплитуда внешнего шума источников (0.05)
+	H                float64 `json:"h"`                // Порог переключения с действия STORE (0.005)
+	BaseEnergyWeight float64 `json:"baseEnergyWeight"` // Базовый вес накопления энергии (0.20)
+	BaseSafety       float64 `json:"baseSafety"`       // Базовый вес безопасности (0.35)
+	BaseCostWeight   float64 `json:"baseCostWeight"`   // Базовый вес стоимости (0.05)
+	ReferenceInflow  float64 `json:"referenceInflow"`  // Опорный приток для нормирования памяти (1.0 EU/такт)
+	NoiseAmplitude   float64 `json:"noiseAmplitude"`   // Амплитуда внешнего шума источников (0.05)
 
 	// Мутации (эволюционный режим)
 	MutationProbability float64 `json:"mutationProbability"` // Вероятность мутации гена (0.10)
@@ -53,7 +53,7 @@ type Parameters struct {
 func DefaultParameters() Parameters {
 	return Parameters{
 		Dt:                   0.1,
-		MaxPopulation:        100,
+		MaxPopulation:        2000,
 		EMax:                 100.0,
 		InitialEnergy:        35.0,
 		ComplianceC:          2.0,
@@ -94,6 +94,6 @@ func DefaultGenome() Genome {
 		WeightReproduction: 0.15,
 		WeightCost:         0.10,
 		Lambda:             0.80,
-		HThreshold:         0.05,
+		HThreshold:         0.005,
 	}
 }

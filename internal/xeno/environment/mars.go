@@ -49,7 +49,7 @@ func (m *MarsEnvironment) SampleField(lat, lng float64, tick int64) float64 {
 
 	// Сезонная циркуляция в бассейне Ацидалии
 	circulation := math.Cos(latRad) * (1.0 + 0.5*math.Sin(lngRad+phase))
-	return math.Max(0.0, m.dustIntensity * m.stormFactor * circulation)
+	return math.Max(0.0, m.dustIntensity*m.stormFactor*circulation)
 }
 
 func (m *MarsEnvironment) ResourceInput(ind *model.Individual, dt float64, noise float64) float64 {

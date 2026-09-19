@@ -4,7 +4,7 @@ package model
 type PlanetaryReference struct {
 	BodyName        string  `json:"bodyName"`
 	MeanTemperature float64 `json:"meanTemperatureCelsius"` // °C
-	TemperatureK    float64 `json:"temperatureKelvin"`       // K
+	TemperatureK    float64 `json:"temperatureKelvin"`      // K
 	Gravity         float64 `json:"gravity"`                // м/с²
 	SurfacePressure float64 `json:"surfacePressureBar"`     // бар
 	Source          string  `json:"source"`
@@ -13,15 +13,15 @@ type PlanetaryReference struct {
 
 // LocalScenarioConfig — локальный профиль условий моделируемой области (не меняет всю планету)
 type LocalScenarioConfig struct {
-	RegionName      string             `json:"regionName"`
-	BaseFlow        float64            `json:"baseFlow"`        // Базовый приток энергии
-	NoiseAmplitude  float64            `json:"noiseAmplitude"`  // Амплитуда флуктуаций шума
-	SpecificParams  map[string]float64 `json:"specificParams"`  // Физически специфичные параметры (градиент, интенсивность бури, перепад температур)
+	RegionName     string             `json:"regionName"`
+	BaseFlow       float64            `json:"baseFlow"`       // Базовый приток энергии
+	NoiseAmplitude float64            `json:"noiseAmplitude"` // Амплитуда флуктуаций шума
+	SpecificParams map[string]float64 `json:"specificParams"` // Физически специфичные параметры (градиент, интенсивность бури, перепад температур)
 }
 
 // ModelConfig — коэффициенты абстрактного организма и правила связи
 type ModelConfig struct {
-	OrganismType    string  `json:"organismType"`    // mineral_conductive, dust_resonator, thermal_structure
+	OrganismType    string  `json:"organismType"` // mineral_conductive, dust_resonator, thermal_structure
 	Dt              float64 `json:"dt"`
 	EMax            float64 `json:"eMax"`
 	ReserveTarget   float64 `json:"reserveTarget"`
@@ -74,8 +74,8 @@ func GetPresetWorlds() []World {
 				ReserveTarget:   40.0,
 				MaintenanceRate: 1.0,
 				StarvationLimit: 5,
-				MaxPopulation:   180,
-				MaxColonies:     12,
+				MaxPopulation:   2000,
+				MaxColonies:     100,
 			},
 			TextureURL: "/textures/earth.jpg",
 		},
@@ -108,8 +108,8 @@ func GetPresetWorlds() []World {
 				ReserveTarget:   35.0,
 				MaintenanceRate: 0.8,
 				StarvationLimit: 6,
-				MaxPopulation:   180,
-				MaxColonies:     12,
+				MaxPopulation:   2000,
+				MaxColonies:     100,
 			},
 			TextureURL: "/textures/mars.jpg",
 		},
@@ -143,8 +143,8 @@ func GetPresetWorlds() []World {
 				ReserveTarget:   50.0,
 				MaintenanceRate: 1.2,
 				StarvationLimit: 4,
-				MaxPopulation:   180,
-				MaxColonies:     12,
+				MaxPopulation:   2000,
+				MaxColonies:     100,
 			},
 			TextureURL: "/textures/venus.jpg",
 		},

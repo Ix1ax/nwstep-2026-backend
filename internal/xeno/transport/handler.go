@@ -3,15 +3,16 @@ package transport
 import (
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"sync"
 
 	"github.com/gofiber/contrib/websocket"
 	"github.com/gofiber/fiber/v2"
-	"github.com/rs/zerolog"
 	"github.com/ix1ax/nwstep-hackaton-2026/golang/internal/xeno/experiments"
 	"github.com/ix1ax/nwstep-hackaton-2026/golang/internal/xeno/export"
 	"github.com/ix1ax/nwstep-hackaton-2026/golang/internal/xeno/model"
 	"github.com/ix1ax/nwstep-hackaton-2026/golang/pkg/response"
+	"github.com/rs/zerolog"
 )
 
 type Handler struct {
@@ -81,9 +82,7 @@ type CreateExperimentRequest struct {
 func (h *Handler) CreateExperiment(c *fiber.Ctx) error {
 	var req CreateExperimentRequest
 	if err := c.BodyParser(&req); err != nil {
-		req.WorldID = "earth"
-		req.Mode = model.ModeEvolutionary
-		req.Seed = 42
+		return response.BadRequest(c, "Invalid request body")
 	}
 	if req.WorldID == "" {
 		req.WorldID = "earth"
@@ -95,14 +94,27 @@ func (h *Handler) CreateExperiment(c *fiber.Ctx) error {
 		req.Seed = 42
 	}
 
+	if _, ok := model.FindWorldByID(req.WorldID); !ok {
+		return response.BadRequest(c, "Unknown world")
+	}
+	if !experiments.ValidMode(req.Mode) {
+		return response.BadRequest(c, "Unknown mode")
+	}
+	if len(h.manager.ListExperiments()) >= 100 {
+		return response.BadRequest(c, "Experiment limit reached; remove unused experiments")
+	}
 	exp := h.manager.CreateExperiment(req.Name, req.WorldID, req.Mode, req.Seed, h.BroadcastSnapshot)
-	return response.Created(c, exp)
+	return response.Created(c, exp.View())
 }
 
 // ListExperiments возвращает список всех экспериментов
 func (h *Handler) ListExperiments(c *fiber.Ctx) error {
 	list := h.manager.ListExperiments()
-	return response.OK(c, list)
+	views := make([]*experiments.Experiment, 0, len(list))
+	for _, exp := range list {
+		views = append(views, exp.View())
+	}
+	return response.OK(c, views)
 }
 
 // GetExperiment возвращает детали эксперимента
@@ -112,7 +124,7 @@ func (h *Handler) GetExperiment(c *fiber.Ctx) error {
 	if err != nil {
 		return response.NotFound(c, "Experiment not found")
 	}
-	return response.OK(c, exp)
+	return response.OK(c, exp.View())
 }
 
 // CommandRequest — запрос на выполнение команды
@@ -136,15 +148,17 @@ func (h *Handler) ExecuteCommand(c *fiber.Ctx) error {
 		return response.NotFound(c, "Experiment not found")
 	}
 
-	if req.ExpectedRevision > 0 && exp.LatestSnapshot.Revision != req.ExpectedRevision {
+	view := exp.View()
+	if req.ExpectedRevision > 0 && view.LatestSnapshot.Revision != req.ExpectedRevision {
 		return response.BadRequest(c, fmt.Sprintf("revision mismatch: expected %d, got %d",
-			req.ExpectedRevision, exp.LatestSnapshot.Revision))
+			req.ExpectedRevision, view.LatestSnapshot.Revision))
 	}
 
 	if err := exp.SendCommand(req.Command, req.Speed); err != nil {
 		return response.BadRequest(c, err.Error())
 	}
 
+	exp = exp.View()
 	return response.OK(c, fiber.Map{
 		"experimentId": exp.ID,
 		"status":       exp.Status,
@@ -166,8 +180,11 @@ func (h *Handler) AddIntervention(c *fiber.Ctx) error {
 		return response.NotFound(c, "Experiment not found")
 	}
 
-	exp.Interventions = append(exp.Interventions, &it)
-	return response.Created(c, it)
+	accepted, err := exp.AddIntervention(it)
+	if err != nil {
+		return response.BadRequest(c, err.Error())
+	}
+	return response.Created(c, accepted)
 }
 
 // GetStateSnapshot возвращает снимок состояния мира и чексумму SHA-256
@@ -177,7 +194,7 @@ func (h *Handler) GetStateSnapshot(c *fiber.Ctx) error {
 	if err != nil {
 		return response.NotFound(c, "Experiment not found")
 	}
-	return response.OK(c, exp.LatestSnapshot)
+	return response.OK(c, exp.View().LatestSnapshot)
 }
 
 // GetColony возвращает детальное состояние колонии и список её особей
@@ -190,6 +207,7 @@ func (h *Handler) GetColony(c *fiber.Ctx) error {
 		return response.NotFound(c, "Experiment not found")
 	}
 
+	exp = exp.View()
 	var targetColony *model.Colony
 	for _, col := range exp.LatestSnapshot.Colonies {
 		if col.ID == colonyID {
@@ -203,7 +221,7 @@ func (h *Handler) GetColony(c *fiber.Ctx) error {
 
 	// Собираем особей данной колонии
 	colonyIndividuals := make([]model.Individual, 0)
-	for _, ind := range exp.LatestSnapshot.Individuals {
+	for _, ind := range exp.View().LatestSnapshot.Individuals {
 		if ind.ColonyID == colonyID {
 			colonyIndividuals = append(colonyIndividuals, ind)
 		}
@@ -225,7 +243,7 @@ func (h *Handler) GetIndividual(c *fiber.Ctx) error {
 		return response.NotFound(c, "Experiment not found")
 	}
 
-	for _, ind := range exp.LatestSnapshot.Individuals {
+	for _, ind := range exp.View().LatestSnapshot.Individuals {
 		if ind.ID == indID {
 			return response.OK(c, ind)
 		}
@@ -246,7 +264,7 @@ func (h *Handler) GetMetrics(c *fiber.Ctx) error {
 	toTick := c.QueryInt("to", 100000)
 
 	filtered := make([]*model.MetricsSnapshot, 0)
-	for _, m := range exp.MetricsHistory {
+	for _, m := range exp.View().MetricsHistory {
 		if m.Tick >= int64(fromTick) && m.Tick <= int64(toTick) {
 			filtered = append(filtered, m)
 		}
@@ -291,7 +309,19 @@ func (h *Handler) ImportExperiment(c *fiber.Ctx) error {
 		return response.BadRequest(c, fmt.Sprintf("Import error: %v", err))
 	}
 
-	return response.Created(c, bundle)
+	seed, err := strconv.ParseUint(bundle.Seed, 10, 64)
+	if err != nil {
+		return response.BadRequest(c, "Invalid seed")
+	}
+	exp := h.manager.CreateExperiment(bundle.Name, bundle.World.ID, bundle.Mode, seed, h.BroadcastSnapshot)
+	exp.Parameters = bundle.Parameters
+	exp.Interventions = bundle.Interventions
+	snap, err := exp.Replay(bundle.FinalSnapshot.Tick)
+	if err != nil || snap.Checksum != bundle.FinalSnapshot.Checksum {
+		h.manager.Remove(exp.ID)
+		return response.BadRequest(c, "Recording checksum mismatch or invalid history")
+	}
+	return response.Created(c, exp.View())
 }
 
 // ReplayRequest — запрос на воспроизведение опыта
@@ -353,6 +383,7 @@ func (h *Handler) HandleWebSocketStream(c *websocket.Conn) {
 
 	// Отправляем начальный снимок
 	if exp, err := h.manager.GetExperiment(expID); err == nil {
+		exp = exp.View()
 		payload := fiber.Map{
 			"type":         "snapshot",
 			"experimentId": expID,
@@ -379,4 +410,24 @@ func (h *Handler) HandleWebSocketStream(c *websocket.Conn) {
 			}
 		}
 	}
+}
+
+func (h *Handler) Preview(c *fiber.Ctx) error {
+	exp, err := h.manager.GetExperiment(c.Params("id"))
+	if err != nil {
+		return response.NotFound(c, "Experiment not found")
+	}
+	tick, err := strconv.ParseInt(c.Query("tick", "0"), 10, 64)
+	if err != nil {
+		return response.BadRequest(c, "Invalid tick")
+	}
+	snap, err := exp.Preview(tick)
+	if err != nil {
+		return response.BadRequest(c, err.Error())
+	}
+	return response.OK(c, snap)
+}
+func (h *Handler) DeleteExperiment(c *fiber.Ctx) error {
+	h.manager.Remove(c.Params("id"))
+	return response.OK(c, fiber.Map{"deleted": true})
 }
