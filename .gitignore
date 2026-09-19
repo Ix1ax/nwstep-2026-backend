@@ -30,5 +30,7 @@ tmp/
 .vscode/
 *.iml
 
-# Docs (Swagger)
-docs/
+# Binaries
+server
+main
+*.bin

@@ -1,0 +1,118 @@
+name: Backend CI/CD
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  workflow_dispatch:
+
+jobs:
+  test-and-build:
+    name: Test & Build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: 'stable'
+          cache: true
+
+      - name: Install dependencies
+        run: go mod download
+
+      - name: Run unit tests
+        run: go test -v ./...
+
+      - name: Build server binary
+        run: go build -v -o /dev/null ./cmd/server
+
+  deploy:
+    name: Deploy to VPS
+    needs: test-and-build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup SSH & Deploy to Server
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST || secrets.HOST || '80.78.247.32' }}
+          SSH_USER: ${{ secrets.SSH_USER || secrets.USER || 'root' }}
+          SSH_KEY: ${{ secrets.SSH_KEY || secrets.SSH_PRIVATE_KEY }}
+          SSH_PORT: ${{ secrets.SSH_PORT || '22' }}
+        run: |
+          # 1. Проверяем наличие SSH ключа
+          if [ -z "$SSH_KEY" ]; then
+            echo "Error: SSH_KEY or SSH_PRIVATE_KEY secret is not set!"
+            exit 1
+          fi
+
+          # 2. Настраиваем SSH агент и known_hosts
+          mkdir -p ~/.ssh
+          echo "$SSH_KEY" | tr -d '\r' > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -p "$SSH_PORT" -H "$SSH_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+
+          echo "Connecting to $SSH_USER@$SSH_HOST:$SSH_PORT..."
+
+          # 3. Синхронизируем файлы проекта на сервер через rsync
+          ssh -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" "mkdir -p /root/backend"
+          rsync -avz -e "ssh -p $SSH_PORT" --delete \
+            --exclude '.git' \
+            --exclude '.github' \
+            ./ "$SSH_USER@$SSH_HOST:/root/backend/"
+
+          # 4. Выполняем развертывание и проверку на сервере
+          ssh -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" bash << 'EOF'
+            set -e
+            cd /root/backend
+
+            # Создаем .env с базовой конфигурацией, если файл отсутствует
+            if [ ! -f .env ]; then
+              echo "Creating default .env file..."
+              cat << 'ENVFILE' > .env
+          APP_ENV=production
+          SERVER_PORT=8080
+          JWT_SECRET=super_secret_xenochoice_key_2026
+
+          DB_HOST=postgres
+          DB_PORT=5432
+          DB_USER=postgres
+          DB_PASSWORD=postgres
+          DB_NAME=nwstep
+          DB_SSLMODE=disable
+
+          REDIS_HOST=redis
+          REDIS_PORT=6379
+          REDIS_PASSWORD=
+
+          S3_ENDPOINT=minio:9000
+          S3_ACCESS_KEY=minioadmin
+          S3_SECRET_KEY=minioadmin
+          S3_BUCKET=nwstep-uploads
+          S3_USE_SSL=false
+          ENVFILE
+            fi
+
+            echo "Starting containers via Docker Compose..."
+            docker compose up -d --build
+
+            echo "Checking server health..."
+            sleep 5
+            for i in {1..10}; do
+              if curl -s -f http://localhost:8080/health > /dev/null; then
+                echo "Deployment successful! Service is healthy."
+                exit 0
+              fi
+              echo "Waiting for health check ($i/10)..."
+              sleep 3
+            done
+
+            echo "Error: Health check failed!"
+            docker compose logs --tail=50 app
+            exit 1
+          EOF

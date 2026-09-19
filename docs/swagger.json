@@ -1,0 +1,1088 @@
+{
+  "swagger": "2.0",
+  "info": {
+    "title": "XenoChoice Sandbox API v2 («Машина выбора»)",
+    "version": "2.0.0",
+    "description": "Авторитетный детерминированный движок симуляции небиологических сообществ на реальных планетах (Земля, Марс, Венера) в соответствии с ТЗ v2",
+    "contact": {
+      "name": "XenoChoice Team",
+      "email": "support@xenochoice.io"
+    },
+    "license": {
+      "name": "MIT"
+    }
+  },
+  "basePath": "/api/v2",
+  "schemes": [
+    "http",
+    "https",
+    "ws",
+    "wss"
+  ],
+  "consumes": [
+    "application/json"
+  ],
+  "produces": [
+    "application/json"
+  ],
+  "tags": [
+    {
+      "name": "Worlds",
+      "description": "Каталог планет и физических сред со справочными данными NASA"
+    },
+    {
+      "name": "Experiments",
+      "description": "Управление экспериментами, симуляция и Replay"
+    },
+    {
+      "name": "Inspection",
+      "description": "Инспектор состояния колоний и трассировка решений особей"
+    },
+    {
+      "name": "Export & Import",
+      "description": "Экспорт в JSON/CSV и импорт экспериментов"
+    }
+  ],
+  "paths": {
+    "/worlds": {
+      "get": {
+        "tags": [
+          "Worlds"
+        ],
+        "summary": "Получить список доступных планет со справочными данными NASA",
+        "description": "Возвращает Землю, Марс и Венеру с реальными справочными параметрами (NASA Planetary Fact Sheet), локальными сценариями и параметрами абстрактного организма.",
+        "responses": {
+          "200": {
+            "description": "Список миров",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "success": {
+                  "type": "boolean"
+                },
+                "data": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/definitions/World"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/experiments": {
+      "get": {
+        "tags": [
+          "Experiments"
+        ],
+        "summary": "Список всех активных экспериментов в памяти",
+        "responses": {
+          "200": {
+            "description": "Список экспериментов",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "success": {
+                  "type": "boolean"
+                },
+                "data": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/definitions/Experiment"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Experiments"
+        ],
+        "summary": "Создать новый эксперимент на выбранной планете",
+        "description": "Инициализирует детерминированный прогон на Земле, Марсе или Венере со стартовыми колониями и каналом связей.",
+        "parameters": [
+          {
+            "name": "request",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/CreateExperimentRequest"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Эксперимент успешно создан",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "success": {
+                  "type": "boolean"
+                },
+                "data": {
+                  "$ref": "#/definitions/Experiment"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/experiments/{id}": {
+      "get": {
+        "tags": [
+          "Experiments"
+        ],
+        "summary": "Получить метаданные и статус эксперимента",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Детали эксперимента",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "success": {
+                  "type": "boolean"
+                },
+                "data": {
+                  "$ref": "#/definitions/Experiment"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Эксперимент не найден"
+          }
+        }
+      }
+    },
+    "/experiments/{id}/state": {
+      "get": {
+        "tags": [
+          "Experiments"
+        ],
+        "summary": "Полный снимок мира, особей, колоний и связей с SHA-256",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Авторитетный снимок состояния",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "success": {
+                  "type": "boolean"
+                },
+                "data": {
+                  "$ref": "#/definitions/StateSnapshot"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/experiments/{id}/commands": {
+      "post": {
+        "tags": [
+          "Experiments"
+        ],
+        "summary": "Выполнить команду управления симуляцией",
+        "description": "Команды: start, pause, resume, step, setSpeed (1x, 2x, 5x). Поддерживает expectedRevision для идемпотентности.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "command",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/CommandRequest"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Команда выполнена успешно"
+          },
+          "400": {
+            "description": "Некорректная команда или несовпадение ревизии"
+          }
+        }
+      }
+    },
+    "/experiments/{id}/interventions": {
+      "post": {
+        "tags": [
+          "Experiments"
+        ],
+        "summary": "Добавить внешнее воздействие исследователя",
+        "description": "Типы воздействий: add_inoculum, set_flow, set_noise, impulse, perturbation, depletion, toggle_mutations.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "intervention",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/Intervention"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Воздействие запланировано"
+          }
+        }
+      }
+    },
+    "/experiments/{id}/colonies/{colonyId}": {
+      "get": {
+        "tags": [
+          "Inspection"
+        ],
+        "summary": "Детальное состояние колонии и список входящих в неё особей",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "colonyId",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Информация о колонии",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "success": {
+                  "type": "boolean"
+                },
+                "data": {
+                  "type": "object",
+                  "properties": {
+                    "colony": {
+                      "$ref": "#/definitions/Colony"
+                    },
+                    "individuals": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/definitions/Individual"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/experiments/{id}/individuals/{individualId}": {
+      "get": {
+        "tags": [
+          "Inspection"
+        ],
+        "summary": "Полная трассировка особи (координаты, запас, геном, память, решение)",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "individualId",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Данные особи",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "success": {
+                  "type": "boolean"
+                },
+                "data": {
+                  "$ref": "#/definitions/Individual"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/experiments/{id}/metrics": {
+      "get": {
+        "tags": [
+          "Experiments"
+        ],
+        "summary": "История метрик эксперимента (популяция, энтропия, баланс)",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "type": "integer",
+            "default": 0
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "type": "integer",
+            "default": 100000
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Временные ряды метрик",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "success": {
+                  "type": "boolean"
+                },
+                "data": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/definitions/MetricsSnapshot"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/experiments/{id}/export": {
+      "get": {
+        "tags": [
+          "Export & Import"
+        ],
+        "summary": "Экспорт результатов прогона в JSON или CSV",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "format",
+            "in": "query",
+            "type": "string",
+            "enum": [
+              "json",
+              "csv"
+            ],
+            "default": "json"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Файл экспорта JSON или CSV"
+          }
+        }
+      }
+    },
+    "/experiments/import": {
+      "post": {
+        "tags": [
+          "Export & Import"
+        ],
+        "summary": "Импорт ранее экспортированного JSON-бандла эксперимента",
+        "parameters": [
+          {
+            "name": "bundle",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/ExportBundle"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Эксперимент успешно импортирован"
+          }
+        }
+      }
+    },
+    "/experiments/{id}/replay": {
+      "post": {
+        "tags": [
+          "Experiments"
+        ],
+        "summary": "Воспроизвести эксперимент от такта 0 до targetTick (Replay)",
+        "description": "Запускает детерминированное повторение от начального состояния с тем же seed и вмешательствами, проверяя контрольную сумму SHA-256.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "replay",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/ReplayRequest"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Результат воспроизведения",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "success": {
+                  "type": "boolean"
+                },
+                "data": {
+                  "$ref": "#/definitions/StateSnapshot"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/experiments/{id}/stream": {
+      "get": {
+        "tags": [
+          "Experiments"
+        ],
+        "summary": "WebSocket стриминг состояния мира в реальном времени (до 10 Гц)",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "101": {
+            "description": "Переключение протокола на WebSocket"
+          }
+        }
+      }
+    }
+  },
+  "definitions": {
+    "World": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "example": "earth"
+        },
+        "name": {
+          "type": "string",
+          "example": "Земля"
+        },
+        "description": {
+          "type": "string"
+        },
+        "reference": {
+          "$ref": "#/definitions/PlanetaryReference"
+        },
+        "scenario": {
+          "$ref": "#/definitions/LocalScenarioConfig"
+        },
+        "model": {
+          "$ref": "#/definitions/ModelConfig"
+        }
+      }
+    },
+    "PlanetaryReference": {
+      "type": "object",
+      "properties": {
+        "bodyName": {
+          "type": "string",
+          "example": "Earth"
+        },
+        "meanTemperatureCelsius": {
+          "type": "number",
+          "example": 15.0
+        },
+        "temperatureKelvin": {
+          "type": "number",
+          "example": 288.15
+        },
+        "gravity": {
+          "type": "number",
+          "example": 9.8
+        },
+        "surfacePressureBar": {
+          "type": "number",
+          "example": 1.0
+        },
+        "source": {
+          "type": "string",
+          "example": "NASA Planetary Fact Sheet"
+        },
+        "sourceDate": {
+          "type": "string",
+          "example": "2025-03-18"
+        }
+      }
+    },
+    "LocalScenarioConfig": {
+      "type": "object",
+      "properties": {
+        "regionName": {
+          "type": "string"
+        },
+        "baseFlow": {
+          "type": "number"
+        },
+        "noiseAmplitude": {
+          "type": "number"
+        },
+        "specificParams": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "number"
+          }
+        }
+      }
+    },
+    "ModelConfig": {
+      "type": "object",
+      "properties": {
+        "organismType": {
+          "type": "string",
+          "example": "mineral_conductive"
+        },
+        "dt": {
+          "type": "number",
+          "example": 0.1
+        },
+        "eMax": {
+          "type": "number",
+          "example": 100.0
+        },
+        "reserveTarget": {
+          "type": "number",
+          "example": 40.0
+        },
+        "maintenanceRate": {
+          "type": "number",
+          "example": 1.0
+        },
+        "maxPopulation": {
+          "type": "integer",
+          "example": 180
+        },
+        "maxColonies": {
+          "type": "integer",
+          "example": 12
+        }
+      }
+    },
+    "Individual": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "example": "ind-01"
+        },
+        "worldId": {
+          "type": "string",
+          "example": "earth"
+        },
+        "colonyId": {
+          "type": "string",
+          "example": "colony-01"
+        },
+        "parentId": {
+          "type": "string"
+        },
+        "lat": {
+          "type": "number",
+          "example": 20.0
+        },
+        "lng": {
+          "type": "number",
+          "example": 10.0
+        },
+        "energy": {
+          "type": "number",
+          "example": 35.0
+        },
+        "biomass": {
+          "type": "number",
+          "example": 5.0
+        },
+        "memory": {
+          "type": "number",
+          "example": 0.0
+        },
+        "alive": {
+          "type": "boolean",
+          "example": true
+        },
+        "age": {
+          "type": "integer",
+          "example": 12
+        },
+        "generation": {
+          "type": "integer",
+          "example": 1
+        },
+        "lastDecision": {
+          "$ref": "#/definitions/DecisionTrace"
+        }
+      }
+    },
+    "Colony": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "example": "colony-01"
+        },
+        "worldId": {
+          "type": "string",
+          "example": "earth"
+        },
+        "name": {
+          "type": "string",
+          "example": "Северное Сообщество"
+        },
+        "color": {
+          "type": "string",
+          "example": "#3b82f6"
+        },
+        "formedAtTick": {
+          "type": "integer",
+          "example": 0
+        },
+        "individualIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "metrics": {
+          "type": "object",
+          "properties": {
+            "population": {
+              "type": "integer",
+              "example": 6
+            },
+            "totalEnergy": {
+              "type": "number",
+              "example": 210.0
+            }
+          }
+        }
+      }
+    },
+    "Channel": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "example": "ch-ind-01-ind-02"
+        },
+        "fromId": {
+          "type": "string",
+          "example": "ind-01"
+        },
+        "toId": {
+          "type": "string",
+          "example": "ind-02"
+        },
+        "distance": {
+          "type": "number",
+          "example": 0.05
+        },
+        "conductance": {
+          "type": "number",
+          "example": 1.5
+        },
+        "loss": {
+          "type": "number",
+          "example": 0.06
+        },
+        "delayTicks": {
+          "type": "integer",
+          "example": 1
+        },
+        "enabled": {
+          "type": "boolean",
+          "example": true
+        }
+      }
+    },
+    "DecisionTrace": {
+      "type": "object",
+      "properties": {
+        "individualId": {
+          "type": "string",
+          "example": "ind-01"
+        },
+        "mode": {
+          "type": "string",
+          "example": "adaptive"
+        },
+        "tick": {
+          "type": "integer",
+          "example": 45
+        },
+        "selectedAction": {
+          "type": "string",
+          "example": "STORE"
+        },
+        "selectedTarget": {
+          "type": "string"
+        },
+        "scores": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "number"
+          }
+        },
+        "chosenScore": {
+          "type": "number",
+          "example": 0.45
+        },
+        "reasoning": {
+          "type": "string"
+        }
+      }
+    },
+    "Intervention": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "example": "inv-001"
+        },
+        "tick": {
+          "type": "integer",
+          "example": 100
+        },
+        "sequence": {
+          "type": "integer",
+          "example": 0
+        },
+        "type": {
+          "type": "string",
+          "example": "impulse"
+        },
+        "targetId": {
+          "type": "string",
+          "example": "earth"
+        },
+        "value": {
+          "type": "number",
+          "example": 2.0
+        }
+      }
+    },
+    "StateSnapshot": {
+      "type": "object",
+      "properties": {
+        "tick": {
+          "type": "integer",
+          "example": 50
+        },
+        "revision": {
+          "type": "integer",
+          "example": 51
+        },
+        "checksum": {
+          "type": "string",
+          "example": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"
+        },
+        "status": {
+          "type": "string",
+          "example": "running"
+        },
+        "world": {
+          "$ref": "#/definitions/World"
+        },
+        "individuals": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Individual"
+          }
+        },
+        "colonies": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Colony"
+          }
+        },
+        "channels": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Channel"
+          }
+        },
+        "metrics": {
+          "$ref": "#/definitions/MetricsSnapshot"
+        },
+        "balance": {
+          "$ref": "#/definitions/EnergyBalance"
+        }
+      }
+    },
+    "MetricsSnapshot": {
+      "type": "object",
+      "properties": {
+        "tick": {
+          "type": "integer",
+          "example": 50
+        },
+        "population": {
+          "type": "integer",
+          "example": 12
+        },
+        "activeColonies": {
+          "type": "integer",
+          "example": 2
+        },
+        "survivalRate": {
+          "type": "number",
+          "example": 100.0
+        },
+        "inputPower": {
+          "type": "number",
+          "example": 85.4
+        },
+        "usefulPower": {
+          "type": "number",
+          "example": 68.2
+        },
+        "efficiency": {
+          "type": "number",
+          "example": 79.8
+        },
+        "decisionEntropy": {
+          "type": "number",
+          "example": 1.42
+        },
+        "balanceResidual": {
+          "type": "number",
+          "example": 1.5e-15
+        }
+      }
+    },
+    "EnergyBalance": {
+      "type": "object",
+      "properties": {
+        "initialStored": {
+          "type": "number",
+          "example": 480.0
+        },
+        "externalInput": {
+          "type": "number",
+          "example": 1250.0
+        },
+        "currentStored": {
+          "type": "number",
+          "example": 472.5
+        },
+        "inTransit": {
+          "type": "number",
+          "example": 14.2
+        },
+        "maintenance": {
+          "type": "number",
+          "example": 620.0
+        },
+        "channelLoss": {
+          "type": "number",
+          "example": 12.3
+        },
+        "deathDissipation": {
+          "type": "number",
+          "example": 0.0
+        }
+      }
+    },
+    "CreateExperimentRequest": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "example": "Минеральная эволюция на Земле"
+        },
+        "worldId": {
+          "type": "string",
+          "enum": [
+            "earth",
+            "mars",
+            "venus"
+          ],
+          "example": "earth"
+        },
+        "mode": {
+          "type": "string",
+          "enum": [
+            "reactive",
+            "adaptive",
+            "evolutionary"
+          ],
+          "example": "evolutionary"
+        },
+        "seed": {
+          "type": "integer",
+          "example": 42
+        }
+      }
+    },
+    "CommandRequest": {
+      "type": "object",
+      "required": [
+        "command"
+      ],
+      "properties": {
+        "command": {
+          "type": "string",
+          "enum": [
+            "start",
+            "pause",
+            "resume",
+            "step",
+            "setSpeed"
+          ],
+          "example": "step"
+        },
+        "speed": {
+          "type": "integer",
+          "enum": [
+            1,
+            2,
+            5
+          ],
+          "example": 1
+        },
+        "expectedRevision": {
+          "type": "integer",
+          "example": 50
+        }
+      }
+    },
+    "ReplayRequest": {
+      "type": "object",
+      "required": [
+        "targetTick"
+      ],
+      "properties": {
+        "targetTick": {
+          "type": "integer",
+          "example": 100
+        }
+      }
+    },
+    "ExportBundle": {
+      "type": "object",
+      "properties": {
+        "schemaVersion": {
+          "type": "string",
+          "example": "2.0.0"
+        },
+        "modelVersion": {
+          "type": "string",
+          "example": "surface-ecology-2.0"
+        },
+        "experimentId": {
+          "type": "string",
+          "example": "exp-01"
+        },
+        "seed": {
+          "type": "string",
+          "example": "42"
+        },
+        "world": {
+          "$ref": "#/definitions/World"
+        }
+      }
+    },
+    "Experiment": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "example": "exp-a1b2c3d4"
+        },
+        "name": {
+          "type": "string",
+          "example": "Тестовый эксперимент"
+        },
+        "worldId": {
+          "type": "string",
+          "example": "earth"
+        },
+        "mode": {
+          "type": "string",
+          "example": "evolutionary"
+        },
+        "status": {
+          "type": "string",
+          "example": "ready"
+        },
+        "seed": {
+          "type": "integer",
+          "example": 42
+        },
+        "speed": {
+          "type": "integer",
+          "example": 1
+        },
+        "latestSnapshot": {
+          "$ref": "#/definitions/StateSnapshot"
+        }
+      }
+    }
+  }
+}
