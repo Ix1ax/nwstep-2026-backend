@@ -1,0 +1,11 @@
+.git
+.gitignore
+.env
+tmp
+vendor
+docs
+README.md
+Makefile
+docker-compose*.yml
+monitoring
+scripts

@@ -1,0 +1,54 @@
+version: '3.8'
+
+services:
+  app:
+    image: ghcr.io/ix1ax/nwstep-hackaton-2026:latest
+    ports:
+      - "8080:8080"
+    depends_on:
+      - postgres
+      - redis
+      - minio
+    env_file:
+      - .env
+    networks:
+      - app-network
+    restart: always
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_NAME}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - app-network
+    restart: always
+
+  redis:
+    image: redis:7-alpine
+    networks:
+      - app-network
+    restart: always
+
+  minio:
+    image: quay.io/minio/minio
+    environment:
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY}
+    command: server /data
+    volumes:
+      - minio_data:/data
+    networks:
+      - app-network
+    restart: always
+
+volumes:
+  postgres_data:
+  minio_data:
+
+networks:
+  app-network:
+    driver: bridge
