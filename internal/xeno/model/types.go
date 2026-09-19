@@ -4,8 +4,8 @@ package model
 type Mode string
 
 const (
-	ModeReactive    Mode = "reactive"    // Фиксированный автомат без учета динамической памяти
-	ModeAdaptive    Mode = "adaptive"    // Оценка альтернатив с динамической памятью притока
+	ModeReactive     Mode = "reactive"     // Фиксированный автомат без учета динамической памяти
+	ModeAdaptive     Mode = "adaptive"     // Оценка альтернатив с динамической памятью притока
 	ModeEvolutionary Mode = "evolutionary" // Наследуемые различия и мутации генома
 )
 
@@ -33,13 +33,13 @@ const (
 
 // Genome — наследуемые параметры целевой функции особи (раздел 7.3 ТЗ v2)
 type Genome struct {
-	WeightEnergy       float64 `json:"wE"`       // Вес ожидаемого запаса (wE)
-	WeightDeficit      float64 `json:"wD"`       // Штраф за ожидаемый дефицит (wD)
-	WeightRelief       float64 `json:"wC"`       // Вес помощи соседям (wC)
-	WeightReproduction float64 `json:"wR"`       // Вес результата размножения (wR)
-	WeightCost         float64 `json:"wCost"`    // Штраф за необратимые затраты (wCost)
-	Lambda             float64 `json:"lambda"`   // Коэффициент памяти M_next = lambda*M + (1-lambda)*netInflow
-	HThreshold         float64 `json:"hThreshold"`// Порог улучшения h для смены действия
+	WeightEnergy       float64 `json:"wE"`         // Вес ожидаемого запаса (wE)
+	WeightDeficit      float64 `json:"wD"`         // Штраф за ожидаемый дефицит (wD)
+	WeightRelief       float64 `json:"wC"`         // Вес помощи соседям (wC)
+	WeightReproduction float64 `json:"wR"`         // Вес результата размножения (wR)
+	WeightCost         float64 `json:"wCost"`      // Штраф за необратимые затраты (wCost)
+	Lambda             float64 `json:"lambda"`     // Коэффициент памяти M_next = lambda*M + (1-lambda)*netInflow
+	HThreshold         float64 `json:"hThreshold"` // Порог улучшения h для смены действия
 }
 
 // Individual — особь: гипотетическая небиологическая структура (раздел 4.2 ТЗ v2)
@@ -48,17 +48,17 @@ type Individual struct {
 	WorldID          string         `json:"worldId"`
 	ColonyID         string         `json:"colonyId"`
 	ParentID         *string        `json:"parentId,omitempty"`
-	Lat              float64        `json:"lat"`              // Широта на сфере (-90..+90)
-	Lng              float64        `json:"lng"`              // Долгота на сфере (-180..+180)
-	Energy           float64        `json:"energy"`           // Аккумулированная энергия
-	Biomass          float64        `json:"biomass"`          // Структурный ресурс
-	Memory           float64        `json:"memory"`           // Динамическая память притока M
-	Genome           Genome         `json:"genome"`           // Наследуемые параметры
-	Alive            bool           `json:"alive"`            // Статус жизнеспособности
-	Age              int64          `json:"age"`              // Возраст в тактах
-	Generation       int            `json:"generation"`       // Номер поколения
-	StarvationTicks  int            `json:"starvationTicks"`  // Число тактов в режиме дефицита
-	BirthTick        int64          `json:"birthTick"`        // Такт появления
+	Lat              float64        `json:"lat"`                 // Широта на сфере (-90..+90)
+	Lng              float64        `json:"lng"`                 // Долгота на сфере (-180..+180)
+	Energy           float64        `json:"energy"`              // Аккумулированная энергия
+	Biomass          float64        `json:"biomass"`             // Структурный ресурс
+	Memory           float64        `json:"memory"`              // Динамическая память притока M
+	Genome           Genome         `json:"genome"`              // Наследуемые параметры
+	Alive            bool           `json:"alive"`               // Статус жизнеспособности
+	Age              int64          `json:"age"`                 // Возраст в тактах
+	Generation       int            `json:"generation"`          // Номер поколения
+	StarvationTicks  int            `json:"starvationTicks"`     // Число тактов в режиме дефицита
+	BirthTick        int64          `json:"birthTick"`           // Такт появления
 	DeathTick        *int64         `json:"deathTick,omitempty"` // Такт гибели
 	DeathReason      string         `json:"deathReason,omitempty"`
 	LastDecision     *DecisionTrace `json:"lastDecision,omitempty"`
@@ -81,10 +81,10 @@ type Colony struct {
 	WorldID        string        `json:"worldId"`
 	ParentColonyID *string       `json:"parentColonyId,omitempty"`
 	Name           string        `json:"name"`
-	Color          string        `json:"color"`          // Цвет в HEX (#3b82f6)
-	FormedAtTick   int64         `json:"formedAtTick"`   // Такт образования
-	IndividualIDs  []string      `json:"individualIds"`  // Список живых особей
-	Metrics        ColonyMetrics `json:"metrics"`        // Агрегаты участников
+	Color          string        `json:"color"`         // Цвет в HEX (#3b82f6)
+	FormedAtTick   int64         `json:"formedAtTick"`  // Такт образования
+	IndividualIDs  []string      `json:"individualIds"` // Список живых особей
+	Metrics        ColonyMetrics `json:"metrics"`       // Агрегаты участников
 }
 
 // Channel — физическая связь между двумя особями (раздел 4.4 ТЗ v2)
@@ -105,9 +105,9 @@ type SignalMessage struct {
 	ID           string  `json:"id"`
 	SenderID     string  `json:"senderId"`
 	ReceiverID   string  `json:"receiverId"`
-	NormalizedE  float64 `json:"normalizedE"`  // Нормированный запас отправителя
-	Value        float64 `json:"value"`        // Физическая величина (потенциал / давление / частота)
-	IsStarving   bool    `json:"isStarving"`   // Сигнал бедствия при голодании
+	NormalizedE  float64 `json:"normalizedE"` // Нормированный запас отправителя
+	Value        float64 `json:"value"`       // Физическая величина (потенциал / давление / частота)
+	IsStarving   bool    `json:"isStarving"`  // Сигнал бедствия при голодании
 	EmittedTick  int64   `json:"emittedTick"`
 	DeliveryTick int64   `json:"deliveryTick"`
 }
@@ -118,9 +118,10 @@ type ResourcePacket struct {
 	ChannelID    string  `json:"channelId"`
 	SenderID     string  `json:"senderId"`
 	ReceiverID   string  `json:"receiverId"`
-	SentEnergy   float64 `json:"sentEnergy"`   // Отправленная энергия
-	NetEnergy    float64 `json:"netEnergy"`    // Полезная энергия к доставке
-	LossEnergy   float64 `json:"lossEnergy"`   // Рассеяно в канале
+	EmittedTick  int64   `json:"emittedTick"`
+	SentEnergy   float64 `json:"sentEnergy"` // Отправленная энергия
+	NetEnergy    float64 `json:"netEnergy"`  // Полезная энергия к доставке
+	LossEnergy   float64 `json:"lossEnergy"` // Рассеяно в канале
 	DeliveryTick int64   `json:"deliveryTick"`
 }
 
@@ -139,6 +140,10 @@ type DecisionTrace struct {
 // Intervention — внешнее воздействие исследователя (раздел 8 ТЗ v2)
 type Intervention struct {
 	ID       string             `json:"id"`
+	Name     string             `json:"name,omitempty"`
+	Color    string             `json:"color,omitempty"`
+	Duration int64              `json:"duration,omitempty"`
+	Genome   *Genome            `json:"genome,omitempty"`
 	Tick     int64              `json:"tick"`
 	Sequence int                `json:"sequence"`
 	Type     string             `json:"type"`     // add_inoculum, set_flow, set_noise, impulse, perturbation, depletion, toggle_mutations
@@ -167,15 +172,17 @@ type EnergyBalance struct {
 type MetricsSnapshot struct {
 	Tick              int64   `json:"tick"`
 	TimeTU            float64 `json:"timeTU"`
-	Population        int     `json:"population"`        // Число живых особей
-	ActiveColonies    int     `json:"activeColonies"`    // Число активных колоний
-	SurvivalRate      float64 `json:"survivalRate"`      // Доля выживших исходных особей (%)
-	InputPower        float64 `json:"inputPower"`        // Принятая внешняя мощность / dt
-	UsefulPower       float64 `json:"usefulPower"`       // Полезная мощность (поддержание + рост) / dt
-	Efficiency        float64 `json:"efficiency"`        // Энергоэффективность (%)
-	DecisionEntropy   float64 `json:"decisionEntropy"`   // Информационная энтропия решений (биты 0..2)
-	DeliveryLatency   float64 `json:"deliveryLatency"`   // Средняя задержка доставки пакетов
-	ResponseLatency   float64 `json:"responseLatency"`   // Задержка ответа на вмешательство
+	Population        int     `json:"population"`      // Число живых особей
+	ActiveColonies    int     `json:"activeColonies"`  // Число активных колоний
+	SurvivalRate      float64 `json:"survivalRate"`    // Доля выживших исходных особей (%)
+	InputPower        float64 `json:"inputPower"`      // Принятая внешняя мощность / dt
+	UsefulPower       float64 `json:"usefulPower"`     // Полезная мощность (поддержание + рост) / dt
+	Efficiency        float64 `json:"efficiency"`      // Энергоэффективность (%)
+	DecisionEntropy   float64 `json:"decisionEntropy"` // Информационная энтропия решений (биты 0..2)
+	DeliveryLatency   float64 `json:"deliveryLatency"` // Средняя задержка доставки пакетов
+	ResponseLatency   float64 `json:"responseLatency"` // Задержка ответа на вмешательство
+	DeliveryMeasured  bool    `json:"deliveryMeasured"`
+	ResponseMeasured  bool    `json:"responseMeasured"`
 	BirthsTotal       int     `json:"birthsTotal"`       // Всего рождений особей
 	ColonySplitsTotal int     `json:"colonySplitsTotal"` // Всего отделений колоний
 	DeathsTotal       int     `json:"deathsTotal"`       // Всего смертей особей
@@ -185,16 +192,20 @@ type MetricsSnapshot struct {
 
 // StateSnapshot — полный авторитетный снимок мира и жизни (раздел 13 ТЗ v2)
 type StateSnapshot struct {
-	Tick        int64            `json:"tick"`
-	Revision    int64            `json:"revision"`
-	Checksum    string           `json:"checksum"` // SHA-256 состояния
-	Status      ExperimentStatus `json:"status"`
-	World       World            `json:"world"`
-	Individuals []Individual     `json:"individuals"`
-	Colonies    []Colony         `json:"colonies"`
-	Channels    []Channel        `json:"channels"`
-	InTransit   []ResourcePacket `json:"inTransit"`
-	Signals     []SignalMessage  `json:"signals"`
-	Metrics     MetricsSnapshot  `json:"metrics"`
-	Balance     EnergyBalance    `json:"balance"`
+	Mode          Mode             `json:"mode"`
+	Flow          float64          `json:"flow"`
+	Noise         float64          `json:"noise"`
+	Interventions []*Intervention  `json:"interventions"`
+	Tick          int64            `json:"tick"`
+	Revision      int64            `json:"revision"`
+	Checksum      string           `json:"checksum"` // SHA-256 состояния
+	Status        ExperimentStatus `json:"status"`
+	World         World            `json:"world"`
+	Individuals   []Individual     `json:"individuals"`
+	Colonies      []Colony         `json:"colonies"`
+	Channels      []Channel        `json:"channels"`
+	InTransit     []ResourcePacket `json:"inTransit"`
+	Signals       []SignalMessage  `json:"signals"`
+	Metrics       MetricsSnapshot  `json:"metrics"`
+	Balance       EnergyBalance    `json:"balance"`
 }

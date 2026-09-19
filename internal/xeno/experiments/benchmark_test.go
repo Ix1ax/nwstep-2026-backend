@@ -3,9 +3,9 @@ package experiments_test
 import (
 	"testing"
 
-	"github.com/rs/zerolog"
 	"github.com/ix1ax/nwstep-hackaton-2026/golang/internal/xeno/experiments"
 	"github.com/ix1ax/nwstep-hackaton-2026/golang/internal/xeno/model"
+	"github.com/rs/zerolog"
 )
 
 func TestBenchmarkScenario_AllWorldsAndReplay(t *testing.T) {
@@ -22,8 +22,8 @@ func TestBenchmarkScenario_AllWorldsAndReplay(t *testing.T) {
 		if len(snap.Colonies) != 2 {
 			t.Fatalf("World %s: expected 2 colonies, got %d", wID, len(snap.Colonies))
 		}
-		if len(interventions) != 3 {
-			t.Fatalf("World %s: expected 3 interventions, got %d", wID, len(interventions))
+		if len(interventions) != 0 {
+			t.Fatalf("World %s: expected 0 automatic interventions, got %d", wID, len(interventions))
 		}
 		if snap.World.ID != wID {
 			t.Fatalf("World ID mismatch: expected %s, got %s", wID, snap.World.ID)
@@ -49,8 +49,8 @@ func TestBenchmarkScenario_AllWorldsAndReplay(t *testing.T) {
 	}
 
 	for _, exp := range []*experiments.Experiment{expR, expA, expE} {
-		if exp.LatestSnapshot.Tick != 29 { // такты 0..29
-			t.Fatalf("Expected tick 29, got %d for mode %s", exp.LatestSnapshot.Tick, exp.Mode)
+		if exp.LatestSnapshot.Tick != 30 { // такты 0..29
+			t.Fatalf("Expected tick 30, got %d for mode %s", exp.LatestSnapshot.Tick, exp.Mode)
 		}
 		if exp.LatestSnapshot.Metrics.BalanceResidual > 1e-6 {
 			t.Fatalf("Energy balance violated for mode %s: residual = %e",

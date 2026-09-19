@@ -143,7 +143,7 @@ func (e *Evaluator) evaluateAdaptive(
 	hThreshold := ind.Genome.HThreshold
 
 	// В адаптивном режиме память M модулирует веса безопасности
-	if mode == model.ModeAdaptive {
+	if mode != model.ModeReactive {
 		// Отрицательная память (дефицит) усиливает приоритет сохранения и штраф за дефицит
 		safetyFactor := 1.0 + math.Max(0.0, -ind.Memory)
 		wD *= safetyFactor

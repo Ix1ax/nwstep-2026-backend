@@ -3,6 +3,7 @@ package engine
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"math"
 	"sort"
@@ -50,6 +51,13 @@ type StepState struct {
 	InitialCount      int
 	Interventions     []*model.Intervention
 	NextColonyNum     int
+	UsefulGrowth      float64
+	DeliverySum       float64
+	DeliveryCount     int
+	ResponseTick      int64
+	ResponseBaseline  map[string]model.ActionType
+	ResponseLatency   float64
+	ResponseMeasured  bool
 }
 
 func getSortedIndividualIDs(m map[string]*model.Individual) []string {
@@ -81,7 +89,7 @@ func getSortedChannelIDs(m map[string]*model.Channel) []string {
 
 // Step выполняет ровно один детерминированный такт симуляции строго по 12 шагам ТЗ v2
 func (eng *Engine) Step(st *StepState) (*model.StateSnapshot, *model.MetricsSnapshot, error) {
-	t := st.Tick
+	t := st.Tick + 1
 	dt := eng.params.Dt
 
 	// ─────────────────────────────────────────────────────────────
@@ -100,47 +108,14 @@ func (eng *Engine) Step(st *StepState) (*model.StateSnapshot, *model.MetricsSnap
 	for _, it := range currentInterventions {
 		switch it.Type {
 		case "add_inoculum":
-			// Внесение первичных структур (раздел 7.1 и 8 ТЗ v2)
-			newID := fmt.Sprintf("ind-%04d", len(st.Individuals)+1)
-			colonyID := it.TargetID
-			if colonyID == "" {
-				colonyID = "colony-01"
-			}
-			lat := 0.0
-			lng := 0.0
-			if it.Params != nil {
-				lat = it.Params["lat"]
-				lng = it.Params["lng"]
-			}
-			eInoc := 35.0
-			if it.Value > 0 {
-				eInoc = it.Value
-			}
-			newInd := &model.Individual{
-				ID:               newID,
-				WorldID:          st.World.ID,
-				ColonyID:         colonyID,
-				Lat:              lat,
-				Lng:              lng,
-				Energy:           eInoc,
-				Biomass:          5.0,
-				Memory:           0.0,
-				Genome:           model.DefaultGenome(),
-				Alive:            true,
-				Age:              0,
-				Generation:       1,
-				BirthTick:        t,
-				LastDivisionTick: t,
-			}
-			st.Individuals[newID] = newInd
-			st.Balance.Inoculated += (eInoc + eng.params.KB*newInd.Biomass)
-
-			if col, ok := st.Colonies[colonyID]; ok {
-				col.IndividualIDs = append(col.IndividualIDs, newID)
-			}
+			eng.addColony(st, it, t)
+		case "set_mode":
+			st.Mode = model.Mode(it.TargetID)
+		case "set_channel":
+			eng.editChannel(st, it)
 
 		case "set_flow", "set_noise", "impulse", "perturbation", "depletion":
-			st.Env.ApplyIntervention(it)
+			// Environment settings are reconstructed below.
 
 		case "toggle_mutations":
 			if it.Value > 0.5 {
@@ -150,6 +125,25 @@ func (eng *Engine) Step(st *StepState) (*model.StateSnapshot, *model.MetricsSnap
 			}
 		}
 	}
+
+	st.Env = environment.NewEnvironmentModule(st.World)
+	for _, it := range st.Interventions {
+		if it.Tick <= t && (it.Duration == 0 || t < it.Tick+it.Duration) {
+			st.Env.ApplyIntervention(it)
+		}
+	}
+	if len(currentInterventions) > 0 {
+		st.ResponseTick = t
+		st.ResponseMeasured = false
+		st.ResponseLatency = 0
+		st.ResponseBaseline = map[string]model.ActionType{}
+		for id, ind := range st.Individuals {
+			if ind.LastDecision != nil {
+				st.ResponseBaseline[id] = ind.LastDecision.SelectedAction
+			}
+		}
+	}
+	netInputs := map[string]float64{}
 
 	// ─────────────────────────────────────────────────────────────
 	// Шаг 2: Доставить сигналы и пакеты с deliveryTick <= t
@@ -168,6 +162,8 @@ func (eng *Engine) Step(st *StepState) (*model.StateSnapshot, *model.MetricsSnap
 
 	for _, pkt := range deliveredPackets {
 		st.Balance.InTransit -= pkt.NetEnergy
+		st.DeliverySum += float64(t - pkt.EmittedTick)
+		st.DeliveryCount++
 		receiver, ok := st.Individuals[pkt.ReceiverID]
 		if ok && receiver.Alive {
 			receiver.Energy += pkt.NetEnergy
@@ -195,7 +191,10 @@ func (eng *Engine) Step(st *StepState) (*model.StateSnapshot, *model.MetricsSnap
 		}
 
 		uNoise := st.Streams.Environment.NextFloat64()
-		input := st.Env.ResourceInput(ind, dt, uNoise)
+		sample := *ind
+		sample.Age = t
+		input := st.Env.ResourceInput(&sample, dt, uNoise)
+		netInputs[id] = input - st.Env.MaintenanceCost(ind, dt)
 		stepExternalInput += input
 		st.Balance.ExternalInput += input
 
@@ -258,8 +257,7 @@ func (eng *Engine) Step(st *StepState) (*model.StateSnapshot, *model.MetricsSnap
 		if !ind.Alive {
 			continue
 		}
-		requiredMaint := st.Env.MaintenanceCost(ind, dt)
-		netInflow := ind.Energy - requiredMaint
+		netInflow := netInputs[id]
 		ind.Memory = eng.evaluator.UpdateMemory(ind.Memory, ind.Genome.Lambda, netInflow)
 	}
 
@@ -373,6 +371,7 @@ func (eng *Engine) Step(st *StepState) (*model.StateSnapshot, *model.MetricsSnap
 					NetEnergy:    netEnergy,
 					LossEnergy:   lossEnergy,
 					DeliveryTick: t + int64(ch.DelayTicks),
+					EmittedTick:  t,
 				})
 			}
 
@@ -443,7 +442,7 @@ func (eng *Engine) Step(st *StepState) (*model.StateSnapshot, *model.MetricsSnap
 		st.BirthsTotal++
 
 		childGenome := eng.mutator.InheritGenome(ind.Genome, st.Mode, st.Streams)
-		childID := fmt.Sprintf("ind-%04d", st.BirthsTotal+st.InitialCount)
+		childID := fmt.Sprintf("ind-%04d", len(st.Individuals)+1)
 
 		child := &model.Individual{
 			ID:               childID,
@@ -632,7 +631,11 @@ func (eng *Engine) Step(st *StepState) (*model.StateSnapshot, *model.MetricsSnap
 
 	// Информационная энтропия действий: H = -sum p(a) * log2(p(a)) (0..2 бита)
 	var decisionEntropy float64
-	if livingCount > 0 {
+	decisionCount := 0
+	for _, n := range actionCounts {
+		decisionCount += n
+	}
+	if decisionCount > 0 {
 		actionOrder := []model.ActionType{
 			model.ActionStore,
 			model.ActionTransfer,
@@ -642,7 +645,7 @@ func (eng *Engine) Step(st *StepState) (*model.StateSnapshot, *model.MetricsSnap
 		for _, act := range actionOrder {
 			count := actionCounts[act]
 			if count > 0 {
-				p := float64(count) / float64(livingCount)
+				p := float64(count) / float64(decisionCount)
 				decisionEntropy -= p * math.Log2(p)
 			}
 		}
@@ -662,9 +665,10 @@ func (eng *Engine) Step(st *StepState) (*model.StateSnapshot, *model.MetricsSnap
 	usefulPower := (stepUsefulMaintenance + stepUsefulGrowth) / dt
 
 	var efficiency float64
-	effDenom := stepExternalInput + st.Balance.InitialStored + st.Balance.Inoculated
+	st.UsefulGrowth += stepUsefulGrowth
+	effDenom := st.Balance.ExternalInput + st.Balance.InitialStored + st.Balance.Inoculated
 	if effDenom > 0 {
-		efficiency = math.Min(100.0, (stepUsefulMaintenance+stepUsefulGrowth)/effDenom*100.0)
+		efficiency = math.Min(100.0, (st.Balance.Maintenance+st.UsefulGrowth)/effDenom*100.0)
 	}
 
 	// Считаем активные колонии (где есть хотя бы 1 живая особь)
@@ -675,6 +679,19 @@ func (eng *Engine) Step(st *StepState) (*model.StateSnapshot, *model.MetricsSnap
 		}
 	}
 
+	deliveryLatency := 0.0
+	if st.DeliveryCount > 0 {
+		deliveryLatency = st.DeliverySum / float64(st.DeliveryCount)
+	}
+	if !st.ResponseMeasured && st.ResponseTick > 0 {
+		for id, old := range st.ResponseBaseline {
+			if ind := st.Individuals[id]; ind != nil && ind.Alive && ind.LastDecision != nil && ind.LastDecision.SelectedAction != old {
+				st.ResponseMeasured = true
+				st.ResponseLatency = float64(t - st.ResponseTick)
+				break
+			}
+		}
+	}
 	metrics := &model.MetricsSnapshot{
 		Tick:              t,
 		TimeTU:            float64(t) * dt,
@@ -685,8 +702,10 @@ func (eng *Engine) Step(st *StepState) (*model.StateSnapshot, *model.MetricsSnap
 		UsefulPower:       usefulPower,
 		Efficiency:        efficiency,
 		DecisionEntropy:   decisionEntropy,
-		DeliveryLatency:   1.0, // средняя задержка каналов
-		ResponseLatency:   0.0,
+		DeliveryLatency:   deliveryLatency,
+		DeliveryMeasured:  st.DeliveryCount > 0,
+		ResponseMeasured:  st.ResponseMeasured,
+		ResponseLatency:   st.ResponseLatency,
 		BirthsTotal:       st.BirthsTotal,
 		ColonySplitsTotal: st.ColonySplitsTotal,
 		DeathsTotal:       st.DeathsTotal,
@@ -695,13 +714,13 @@ func (eng *Engine) Step(st *StepState) (*model.StateSnapshot, *model.MetricsSnap
 	}
 
 	// Вычисляем SHA-256 чексумму канонического состояния
-	checksum := computeStateChecksum(st)
-
 	st.Revision++
-	st.Tick++
+	st.Tick = t
+	checksum := computeStateChecksum(st)
 
 	// Собираем снимок для возврата
 	snapshot := &model.StateSnapshot{
+		Mode: st.Mode, Flow: st.Env.GetFlowMultiplier(), Noise: st.Env.GetNoiseMultiplier(), Interventions: st.Interventions,
 		Tick:        t,
 		Revision:    st.Revision,
 		Checksum:    checksum,
@@ -720,23 +739,23 @@ func (eng *Engine) Step(st *StepState) (*model.StateSnapshot, *model.MetricsSnap
 }
 
 func computeStateChecksum(st *StepState) string {
-	h := sha256.New()
-	fmt.Fprintf(h, "tick:%d;world:%s;mode:%s;pop:%d;births:%d;splits:%d;deaths:%d;inTransit:%d;",
-		st.Tick, st.World.ID, st.Mode, len(st.Individuals), st.BirthsTotal, st.ColonySplitsTotal, st.DeathsTotal, len(st.InTransit))
-
-	ids := getSortedIndividualIDs(st.Individuals)
-	for _, id := range ids {
-		ind := st.Individuals[id]
-		fmt.Fprintf(h, "ind:%s:%.4f:%.4f:%d:%.4f;", ind.ID, ind.Energy, ind.Biomass, ind.StarvationTicks, ind.Memory)
-	}
-
-	fmt.Fprintf(h, "prng:%d:%d:%d",
-		st.Streams.Environment.State(),
-		st.Streams.Mutations.State(),
-		st.Streams.Placement.State(),
-	)
-
-	return hex.EncodeToString(h.Sum(nil))
+	// JSON sorts map keys and preserves full float precision. Exclude only UI status/revision.
+	data, _ := json.Marshal(struct {
+		Tick                         int64
+		Mode                         model.Mode
+		World                        model.World
+		Individuals                  map[string]*model.Individual
+		Colonies                     map[string]*model.Colony
+		Channels                     map[string]*model.Channel
+		Packets                      []*model.ResourcePacket
+		Signals                      []*model.SignalMessage
+		Balance                      model.EnergyBalance
+		Random                       [3]uint64
+		Flow, Noise, Growth          float64
+		Births, Deaths, Splits, Next int
+	}{st.Tick, st.Mode, st.World, st.Individuals, st.Colonies, st.Channels, st.InTransit, st.Signals, st.Balance, [3]uint64{st.Streams.Environment.State(), st.Streams.Mutations.State(), st.Streams.Placement.State()}, st.Env.GetFlowMultiplier(), st.Env.GetNoiseMultiplier(), st.UsefulGrowth, st.BirthsTotal, st.DeathsTotal, st.ColonySplitsTotal, st.NextColonyNum})
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:])
 }
 
 func exportIndividuals(m map[string]*model.Individual) []model.Individual {

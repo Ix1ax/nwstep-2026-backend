@@ -3,9 +3,10 @@ package xeno
 import (
 	"github.com/gofiber/contrib/websocket"
 	"github.com/gofiber/fiber/v2"
-	"github.com/rs/zerolog"
 	"github.com/ix1ax/nwstep-hackaton-2026/golang/internal/xeno/experiments"
 	"github.com/ix1ax/nwstep-hackaton-2026/golang/internal/xeno/transport"
+	"github.com/rs/zerolog"
+	"os"
 )
 
 // Module инкапсулирует подсистему XenoChoice Sandbox («Машина выбора» ТЗ v2)
@@ -20,6 +21,12 @@ type Module struct {
 func NewModule(log zerolog.Logger) *Module {
 	manager := experiments.NewManager(log)
 	handler := transport.NewHandler(manager, log)
+	if dir := os.Getenv("XENO_DATA_DIR"); dir != "" {
+		if err := manager.Restore(dir, handler.BroadcastSnapshot); err != nil {
+			log.Error().Err(err).Msg("Cannot restore research checkpoint")
+		}
+		manager.StartCheckpoints(dir)
+	}
 	return &Module{
 		Manager: manager,
 		Handler: handler,
@@ -38,6 +45,9 @@ func (m *Module) RegisterV2(router fiber.Router) {
 	expGroup.Post("/import", m.Handler.ImportExperiment)
 
 	expGroup.Get("/:id", m.Handler.GetExperiment)
+	expGroup.Get("/:id/compare", m.Handler.Compare)
+	expGroup.Get("/:id/preview", m.Handler.Preview)
+	expGroup.Delete("/:id", m.Handler.DeleteExperiment)
 	expGroup.Get("/:id/state", m.Handler.GetStateSnapshot)
 	expGroup.Post("/:id/commands", m.Handler.ExecuteCommand)
 	expGroup.Post("/:id/interventions", m.Handler.AddIntervention)
