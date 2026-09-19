@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strconv"
 	"sync"
+	"time"
 
 	"github.com/gofiber/contrib/websocket"
 	"github.com/gofiber/fiber/v2"
@@ -16,17 +17,22 @@ import (
 )
 
 type Handler struct {
-	manager *experiments.Manager
-	log     zerolog.Logger
-	wsMu    sync.RWMutex
-	wsRooms map[string]map[*websocket.Conn]bool // expID -> conns
+	importsMu   sync.Mutex
+	imports     map[string]*importJob
+	importSlots chan struct{}
+	manager     *experiments.Manager
+	log         zerolog.Logger
+	wsMu        sync.RWMutex
+	wsRooms     map[string]map[*websocket.Conn]bool // expID -> conns
 }
 
 func NewHandler(manager *experiments.Manager, log zerolog.Logger) *Handler {
 	return &Handler{
-		manager: manager,
-		log:     log,
-		wsRooms: make(map[string]map[*websocket.Conn]bool),
+		manager:     manager,
+		log:         log,
+		wsRooms:     make(map[string]map[*websocket.Conn]bool),
+		imports:     make(map[string]*importJob),
+		importSlots: make(chan struct{}, 2),
 	}
 }
 
@@ -57,6 +63,7 @@ func (h *Handler) BroadcastSnapshot(snapshot *model.StateSnapshot, expID string)
 	h.wsMu.Lock()
 	defer h.wsMu.Unlock()
 	for conn := range clients {
+		_ = conn.SetWriteDeadline(time.Now().Add(2 * time.Second))
 		if err := conn.WriteMessage(websocket.TextMessage, data); err != nil {
 			conn.Close()
 			delete(clients, conn)
@@ -301,29 +308,6 @@ func (h *Handler) ExportExperiment(c *fiber.Ctx) error {
 	return c.Send(data)
 }
 
-// ImportExperiment импортирует ранее сохраненный эксперимент
-func (h *Handler) ImportExperiment(c *fiber.Ctx) error {
-	body := c.Body()
-	bundle, err := export.ImportJSON(body)
-	if err != nil {
-		return response.BadRequest(c, fmt.Sprintf("Import error: %v", err))
-	}
-
-	seed, err := strconv.ParseUint(bundle.Seed, 10, 64)
-	if err != nil {
-		return response.BadRequest(c, "Invalid seed")
-	}
-	exp := h.manager.CreateExperiment(bundle.Name, bundle.World.ID, bundle.Mode, seed, h.BroadcastSnapshot)
-	exp.Parameters = bundle.Parameters
-	exp.Interventions = bundle.Interventions
-	snap, err := exp.Replay(bundle.FinalSnapshot.Tick)
-	if err != nil || snap.Checksum != bundle.FinalSnapshot.Checksum {
-		h.manager.Remove(exp.ID)
-		return response.BadRequest(c, "Recording checksum mismatch or invalid history")
-	}
-	return response.Created(c, exp.View())
-}
-
 // ReplayRequest — запрос на воспроизведение опыта
 type ReplayRequest struct {
 	TargetTick int64 `json:"targetTick"`
@@ -393,7 +377,10 @@ func (h *Handler) HandleWebSocketStream(c *websocket.Conn) {
 			"payload":      exp.LatestSnapshot,
 		}
 		if b, err := json.Marshal(payload); err == nil {
-			c.WriteMessage(websocket.TextMessage, b)
+			h.wsMu.Lock()
+			_ = c.SetWriteDeadline(time.Now().Add(2 * time.Second))
+			_ = c.WriteMessage(websocket.TextMessage, b)
+			h.wsMu.Unlock()
 		}
 	}
 

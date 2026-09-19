@@ -8,11 +8,8 @@ import (
 	"github.com/gofiber/swagger"
 	_ "github.com/ix1ax/nwstep-hackaton-2026/golang/docs" // Ignore if not generated yet
 
-	"github.com/ix1ax/nwstep-hackaton-2026/golang/internal/auth"
 	"github.com/ix1ax/nwstep-hackaton-2026/golang/internal/choice"
 	"github.com/ix1ax/nwstep-hackaton-2026/golang/internal/colony"
-	"github.com/ix1ax/nwstep-hackaton-2026/golang/internal/upload"
-	"github.com/ix1ax/nwstep-hackaton-2026/golang/internal/user"
 	"github.com/ix1ax/nwstep-hackaton-2026/golang/internal/ws"
 	"github.com/ix1ax/nwstep-hackaton-2026/golang/internal/xeno"
 	"github.com/ix1ax/nwstep-hackaton-2026/golang/pkg/response"
@@ -40,22 +37,9 @@ func SetupRoutes(app *App) {
 	// API v1
 	v1 := app.Fiber.Group("/api/v1")
 
-	// Middleware
-	authMiddleware := auth.JWTMiddleware(app.Cfg.JWT.Secret)
-
-	// Boilerplate Modules
-	authModule := auth.NewModule(app.DB, app.RDB, app.Cfg, app.Log)
-	authModule.Register(v1, authMiddleware)
-
-	userModule := user.NewModule(app.DB, app.Log)
-	userModule.Register(v1, authMiddleware)
-
 	wsHub := ws.NewHub()
 	wsModule := ws.NewModule(wsHub, app.Log)
 	wsModule.Register(v1, app.Cfg.JWT.Secret)
-
-	uploadModule := upload.NewModule(app.DB, app.S3, app.Log)
-	uploadModule.Register(v1, authMiddleware)
 
 	// 🪐 XenoChoice Domain Modules
 	colonyModule := colony.NewModule(app.Log)

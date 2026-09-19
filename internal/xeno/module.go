@@ -43,6 +43,8 @@ func (m *Module) RegisterV2(router fiber.Router) {
 	expGroup.Post("/", m.Handler.CreateExperiment)
 	expGroup.Get("/", m.Handler.ListExperiments)
 	expGroup.Post("/import", m.Handler.ImportExperiment)
+	router.Get("/imports/:id", m.Handler.GetImport)
+	router.Delete("/imports/:id", m.Handler.CancelImport)
 
 	expGroup.Get("/:id", m.Handler.GetExperiment)
 	expGroup.Get("/:id/compare", m.Handler.Compare)

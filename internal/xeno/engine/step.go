@@ -283,9 +283,10 @@ func (eng *Engine) Step(st *StepState) (*model.StateSnapshot, *model.MetricsSnap
 	}
 
 	sortedChannelIDs := getSortedChannelIDs(st.Channels)
-	allChannels := make([]*model.Channel, 0, len(sortedChannelIDs))
+	outgoing := make(map[string][]*model.Channel)
 	for _, id := range sortedChannelIDs {
-		allChannels = append(allChannels, st.Channels[id])
+		ch := st.Channels[id]
+		outgoing[ch.FromID] = append(outgoing[ch.FromID], ch)
 	}
 
 	// ─────────────────────────────────────────────────────────────
@@ -310,7 +311,7 @@ func (eng *Engine) Step(st *StepState) (*model.StateSnapshot, *model.MetricsSnap
 			ind,
 			st.Mode,
 			t,
-			allChannels,
+			outgoing[id],
 			signalsForInd,
 			neighborEnergies,
 			len(sortedIndIDs),
@@ -341,7 +342,7 @@ func (eng *Engine) Step(st *StepState) (*model.StateSnapshot, *model.MetricsSnap
 		case model.ActionTransfer:
 			targetID := trace.SelectedTarget
 			var ch *model.Channel
-			for _, c := range allChannels {
+			for _, c := range outgoing[id] {
 				if c.FromID == ind.ID && c.ToID == targetID && c.Enabled {
 					ch = c
 					break
