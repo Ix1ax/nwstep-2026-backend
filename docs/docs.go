@@ -6,9 +6,9 @@ import "github.com/swaggo/swag"
 const docTemplate = `{
   "swagger": "2.0",
   "info": {
-    "title": "XenoChoice Sandbox API v2 («Машина выбора»)",
+    "title": "XenoChoice Sandbox API («Машина выбора»)",
     "version": "2.0.0",
-    "description": "Авторитетный детерминированный движок симуляции небиологических сообществ на реальных планетах (Земля, Марс, Венера) в соответствии с ТЗ v2",
+    "description": "Авторитетный детерминированный движок симуляции небиологических сообществ на реальных планетах (Земля, Марс, Венера) в соответствии с ТЗ v2 и ТЗ v1.",
     "contact": {
       "name": "XenoChoice Team",
       "email": "support@xenochoice.io"
@@ -17,7 +17,7 @@ const docTemplate = `{
       "name": "MIT"
     }
   },
-  "basePath": "/api/v2",
+  "basePath": "",
   "schemes": [
     "http",
     "https",
@@ -32,27 +32,130 @@ const docTemplate = `{
   ],
   "tags": [
     {
-      "name": "Worlds",
+      "name": "XenoChoice v2 - Worlds",
       "description": "Каталог планет и физических сред со справочными данными NASA"
     },
     {
-      "name": "Experiments",
-      "description": "Управление экспериментами, симуляция и Replay"
+      "name": "XenoChoice v2 - Experiments",
+      "description": "Управление экспериментами, жизненный цикл симуляции, Replay, Preview и Compare"
     },
     {
-      "name": "Inspection",
-      "description": "Инспектор состояния колоний и трассировка решений особей"
+      "name": "XenoChoice v2 - Interventions",
+      "description": "Воздействия исследователя (импульс, буря, истощение, каналы, режим)"
     },
     {
-      "name": "Export & Import",
-      "description": "Экспорт в JSON/CSV и импорт экспериментов"
+      "name": "XenoChoice v2 - Inspection",
+      "description": "Инспектор состояния колоний, трассировка решений особей и метрики"
+    },
+    {
+      "name": "XenoChoice v2 - Import/Export",
+      "description": "Экспорт в JSON/CSV и асинхронный импорт экспериментов"
+    },
+    {
+      "name": "XenoChoice v2 - Streaming",
+      "description": "WebSocket стриминг телеметрии и кадров симуляции в реальном времени"
+    },
+    {
+      "name": "System",
+      "description": "Системные эндпоинты: Healthcheck, Readiness и Prometheus метрики"
+    },
+    {
+      "name": "XenoChoice v1 - Legacy API",
+      "description": "API v1: колонии, распределение ресурсов и чат-хаб"
     }
   ],
   "paths": {
-    "/worlds": {
+    "/health": {
       "get": {
         "tags": [
-          "Worlds"
+          "System"
+        ],
+        "summary": "Healthcheck сервиса",
+        "description": "Возвращает статус работоспособности HTTP-сервера",
+        "responses": {
+          "200": {
+            "description": "Сервис работает",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "success": {
+                  "type": "boolean",
+                  "example": true
+                },
+                "data": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "example": "ok"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/ready": {
+      "get": {
+        "tags": [
+          "System"
+        ],
+        "summary": "Readiness-проверка сервиса",
+        "description": "Проверяет доступность базы данных PostgreSQL и Redis",
+        "responses": {
+          "200": {
+            "description": "Все зависимости доступны",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "success": {
+                  "type": "boolean",
+                  "example": true
+                },
+                "data": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "example": "ready"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Одна из зависимостей недоступна",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          }
+        }
+      }
+    },
+    "/metrics": {
+      "get": {
+        "tags": [
+          "System"
+        ],
+        "summary": "Prometheus метрики",
+        "description": "Экспортирует системные и прикладные метрики (RPS, latency, in-flight) в формате Prometheus",
+        "produces": [
+          "text/plain"
+        ],
+        "responses": {
+          "200": {
+            "description": "Текстовый поток метрик Prometheus"
+          }
+        }
+      }
+    },
+    "/api/v2/worlds": {
+      "get": {
+        "tags": [
+          "XenoChoice v2 - Worlds"
         ],
         "summary": "Получить список доступных планет со справочными данными NASA",
         "description": "Возвращает Землю, Марс и Венеру с реальными справочными параметрами (NASA Planetary Fact Sheet), локальными сценариями и параметрами абстрактного организма.",
@@ -63,7 +166,8 @@ const docTemplate = `{
               "type": "object",
               "properties": {
                 "success": {
-                  "type": "boolean"
+                  "type": "boolean",
+                  "example": true
                 },
                 "data": {
                   "type": "array",
@@ -77,10 +181,10 @@ const docTemplate = `{
         }
       }
     },
-    "/experiments": {
+    "/api/v2/experiments": {
       "get": {
         "tags": [
-          "Experiments"
+          "XenoChoice v2 - Experiments"
         ],
         "summary": "Список всех активных экспериментов в памяти",
         "responses": {
@@ -90,7 +194,8 @@ const docTemplate = `{
               "type": "object",
               "properties": {
                 "success": {
-                  "type": "boolean"
+                  "type": "boolean",
+                  "example": true
                 },
                 "data": {
                   "type": "array",
@@ -105,10 +210,10 @@ const docTemplate = `{
       },
       "post": {
         "tags": [
-          "Experiments"
+          "XenoChoice v2 - Experiments"
         ],
         "summary": "Создать новый эксперимент на выбранной планете",
-        "description": "Инициализирует детерминированный прогон на Земле, Марсе или Венере со стартовыми колониями и каналом связей.",
+        "description": "Инициализирует мир, две первичные колонии по 6 особей, каналы связей и детерминированный PRNG SplitMix64 с заданным seed.",
         "parameters": [
           {
             "name": "request",
@@ -121,44 +226,53 @@ const docTemplate = `{
         ],
         "responses": {
           "201": {
-            "description": "Эксперимент успешно создан",
+            "description": "Эксперимент создан",
             "schema": {
               "type": "object",
               "properties": {
                 "success": {
-                  "type": "boolean"
+                  "type": "boolean",
+                  "example": true
                 },
                 "data": {
                   "$ref": "#/definitions/Experiment"
                 }
               }
             }
+          },
+          "400": {
+            "description": "Некорректные параметры",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
           }
         }
       }
     },
-    "/experiments/{id}": {
+    "/api/v2/experiments/{id}": {
       "get": {
         "tags": [
-          "Experiments"
+          "XenoChoice v2 - Experiments"
         ],
-        "summary": "Получить метаданные и статус эксперимента",
+        "summary": "Получить детальную информацию об эксперименте по ID",
         "parameters": [
           {
             "name": "id",
             "in": "path",
             "required": true,
-            "type": "string"
+            "type": "string",
+            "example": "exp-a1b2c3d4"
           }
         ],
         "responses": {
           "200": {
-            "description": "Детали эксперимента",
+            "description": "Эксперимент найден",
             "schema": {
               "type": "object",
               "properties": {
                 "success": {
-                  "type": "boolean"
+                  "type": "boolean",
+                  "example": true
                 },
                 "data": {
                   "$ref": "#/definitions/Experiment"
@@ -167,23 +281,64 @@ const docTemplate = `{
             }
           },
           "404": {
-            "description": "Эксперимент не найден"
+            "description": "Эксперимент не найден",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
           }
         }
-      }
-    },
-    "/experiments/{id}/state": {
-      "get": {
+      },
+      "delete": {
         "tags": [
-          "Experiments"
+          "XenoChoice v2 - Experiments"
         ],
-        "summary": "Полный снимок мира, особей, колоний и связей с SHA-256",
+        "summary": "Удалить эксперимент",
+        "description": "Останавливает симуляцию и освобождает ресурсы",
         "parameters": [
           {
             "name": "id",
             "in": "path",
             "required": true,
-            "type": "string"
+            "type": "string",
+            "example": "exp-a1b2c3d4"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Успешно удалено",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "success": {
+                  "type": "boolean",
+                  "example": true
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Эксперимент не найден",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/experiments/{id}/state": {
+      "get": {
+        "tags": [
+          "XenoChoice v2 - Experiments"
+        ],
+        "summary": "Получить текущий полный авторитетный снимок (StateSnapshot)",
+        "description": "Возвращает канонический снимок мира, всех живых особей, колоний, каналов связи, пакетов в пути, метрик и баланса энергии.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string",
+            "example": "exp-a1b2c3d4"
           }
         ],
         "responses": {
@@ -193,30 +348,37 @@ const docTemplate = `{
               "type": "object",
               "properties": {
                 "success": {
-                  "type": "boolean"
+                  "type": "boolean",
+                  "example": true
                 },
                 "data": {
                   "$ref": "#/definitions/StateSnapshot"
                 }
               }
             }
+          },
+          "404": {
+            "description": "Эксперимент не найден",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
           }
         }
       }
     },
-    "/experiments/{id}/commands": {
+    "/api/v2/experiments/{id}/commands": {
       "post": {
         "tags": [
-          "Experiments"
+          "XenoChoice v2 - Experiments"
         ],
-        "summary": "Выполнить команду управления симуляцией",
-        "description": "Команды: start, pause, resume, step, setSpeed (1x, 2x, 5x). Поддерживает expectedRevision для идемпотентности.",
+        "summary": "Управление жизненным циклом (start, pause, step, reset, speed)",
         "parameters": [
           {
             "name": "id",
             "in": "path",
             "required": true,
-            "type": "string"
+            "type": "string",
+            "example": "exp-a1b2c3d4"
           },
           {
             "name": "command",
@@ -229,50 +391,188 @@ const docTemplate = `{
         ],
         "responses": {
           "200": {
-            "description": "Команда выполнена успешно"
+            "description": "Команда выполнена",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "success": {
+                  "type": "boolean",
+                  "example": true
+                },
+                "data": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "example": "running"
+                    },
+                    "speed": {
+                      "type": "integer",
+                      "example": 1
+                    }
+                  }
+                }
+              }
+            }
           },
           "400": {
-            "description": "Некорректная команда или несовпадение ревизии"
+            "description": "Некорректная команда",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
           }
         }
       }
     },
-    "/experiments/{id}/interventions": {
+    "/api/v2/experiments/{id}/interventions": {
       "post": {
         "tags": [
-          "Experiments"
+          "XenoChoice v2 - Interventions"
         ],
-        "summary": "Добавить внешнее воздействие исследователя",
-        "description": "Типы воздействий: add_inoculum, set_flow, set_noise, impulse, perturbation, depletion, toggle_mutations.",
+        "summary": "Применить внешнее воздействие исследователя",
+        "description": "Добавляет в журнал детерминированное воздействие: impulse (энергетический всплеск), perturbation (буря/шум), depletion (истощение ресурса), set_channel (изменение связи), set_mode, set_flow, set_noise.",
         "parameters": [
           {
             "name": "id",
             "in": "path",
             "required": true,
-            "type": "string"
+            "type": "string",
+            "example": "exp-a1b2c3d4"
           },
           {
             "name": "intervention",
             "in": "body",
             "required": true,
             "schema": {
-              "$ref": "#/definitions/Intervention"
+              "$ref": "#/definitions/InterventionRequest"
             }
           }
         ],
         "responses": {
           "201": {
-            "description": "Воздействие запланировано"
+            "description": "Воздействие зарегистрировано в журнале",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "success": {
+                  "type": "boolean",
+                  "example": true
+                },
+                "data": {
+                  "$ref": "#/definitions/Intervention"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Ошибка в параметрах воздействия",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
           }
         }
       }
     },
-    "/experiments/{id}/colonies/{colonyId}": {
+    "/api/v2/experiments/{id}/preview": {
       "get": {
         "tags": [
-          "Inspection"
+          "XenoChoice v2 - Experiments"
         ],
-        "summary": "Детальное состояние колонии и список входящих в неё особей",
+        "summary": "Предпросмотр снимка состояния на произвольном такте (Preview)",
+        "description": "Воспроизводит симуляцию во временном контексте до указанного такта без перемотки основного эксперимента.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string",
+            "example": "exp-a1b2c3d4"
+          },
+          {
+            "name": "tick",
+            "in": "query",
+            "required": true,
+            "type": "integer",
+            "example": 150
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Снимок на запрошенном такте",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "success": {
+                  "type": "boolean",
+                  "example": true
+                },
+                "data": {
+                  "$ref": "#/definitions/StateSnapshot"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Некорректный такт",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/experiments/{id}/compare": {
+      "get": {
+        "tags": [
+          "XenoChoice v2 - Experiments"
+        ],
+        "summary": "Сравнить три режима (реактивный, адаптивный, эволюционный)",
+        "description": "Запускает параллельное сопоставление трёх режимов принятия решений на одинаковом seed и условиях для причинно-следственного анализа (Causal Inference).",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string",
+            "example": "exp-a1b2c3d4"
+          },
+          {
+            "name": "ticks",
+            "in": "query",
+            "required": false,
+            "type": "integer",
+            "default": 300,
+            "example": 300
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Результаты сравнения по трем режимам",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "success": {
+                  "type": "boolean",
+                  "example": true
+                },
+                "data": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/definitions/CompareResult"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/experiments/{id}/colonies/{colonyId}": {
+      "get": {
+        "tags": [
+          "XenoChoice v2 - Inspection"
+        ],
+        "summary": "Получить состояние колонии и агрегированные метрики",
         "parameters": [
           {
             "name": "id",
@@ -289,39 +589,35 @@ const docTemplate = `{
         ],
         "responses": {
           "200": {
-            "description": "Информация о колонии",
+            "description": "Данные колонии",
             "schema": {
               "type": "object",
               "properties": {
                 "success": {
-                  "type": "boolean"
+                  "type": "boolean",
+                  "example": true
                 },
                 "data": {
-                  "type": "object",
-                  "properties": {
-                    "colony": {
-                      "$ref": "#/definitions/Colony"
-                    },
-                    "individuals": {
-                      "type": "array",
-                      "items": {
-                        "$ref": "#/definitions/Individual"
-                      }
-                    }
-                  }
+                  "$ref": "#/definitions/Colony"
                 }
               }
+            }
+          },
+          "404": {
+            "description": "Колония не найдена",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
             }
           }
         }
       }
     },
-    "/experiments/{id}/individuals/{individualId}": {
+    "/api/v2/experiments/{id}/individuals/{individualId}": {
       "get": {
         "tags": [
-          "Inspection"
+          "XenoChoice v2 - Inspection"
         ],
-        "summary": "Полная трассировка особи (координаты, запас, геном, память, решение)",
+        "summary": "Инспектор особи: энергия, структура, динамическая память и трассировка решения",
         "parameters": [
           {
             "name": "id",
@@ -338,56 +634,53 @@ const docTemplate = `{
         ],
         "responses": {
           "200": {
-            "description": "Данные особи",
+            "description": "Полные характеристики особи",
             "schema": {
               "type": "object",
               "properties": {
                 "success": {
-                  "type": "boolean"
+                  "type": "boolean",
+                  "example": true
                 },
                 "data": {
                   "$ref": "#/definitions/Individual"
                 }
               }
             }
+          },
+          "404": {
+            "description": "Особь не найдена",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
           }
         }
       }
     },
-    "/experiments/{id}/metrics": {
+    "/api/v2/experiments/{id}/metrics": {
       "get": {
         "tags": [
-          "Experiments"
+          "XenoChoice v2 - Inspection"
         ],
-        "summary": "История метрик эксперимента (популяция, энтропия, баланс)",
+        "summary": "История метрик эксперимента по тактам",
+        "description": "Возвращает временной ряд показателей: полезная мощность, энтропия решений, энергоэффективность, невязка баланса.",
         "parameters": [
           {
             "name": "id",
             "in": "path",
             "required": true,
             "type": "string"
-          },
-          {
-            "name": "from",
-            "in": "query",
-            "type": "integer",
-            "default": 0
-          },
-          {
-            "name": "to",
-            "in": "query",
-            "type": "integer",
-            "default": 100000
           }
         ],
         "responses": {
           "200": {
-            "description": "Временные ряды метрик",
+            "description": "Временной ряд метрик",
             "schema": {
               "type": "object",
               "properties": {
                 "success": {
-                  "type": "boolean"
+                  "type": "boolean",
+                  "example": true
                 },
                 "data": {
                   "type": "array",
@@ -401,12 +694,12 @@ const docTemplate = `{
         }
       }
     },
-    "/experiments/{id}/export": {
+    "/api/v2/experiments/{id}/export": {
       "get": {
         "tags": [
-          "Export & Import"
+          "XenoChoice v2 - Import/Export"
         ],
-        "summary": "Экспорт результатов прогона в JSON или CSV",
+        "summary": "Экспорт результатов эксперимента в JSON или CSV",
         "parameters": [
           {
             "name": "id",
@@ -432,12 +725,13 @@ const docTemplate = `{
         }
       }
     },
-    "/experiments/import": {
+    "/api/v2/experiments/import": {
       "post": {
         "tags": [
-          "Export & Import"
+          "XenoChoice v2 - Import/Export"
         ],
-        "summary": "Импорт ранее экспортированного JSON-бандла эксперимента",
+        "summary": "Асинхронный импорт JSON-бандла эксперимента",
+        "description": "Запускает фоновую валидацию и воспроизведение (Replay) импортированной записи с проверкой контрольной суммы.",
         "parameters": [
           {
             "name": "bundle",
@@ -449,16 +743,106 @@ const docTemplate = `{
           }
         ],
         "responses": {
-          "201": {
-            "description": "Эксперимент успешно импортирован"
+          "202": {
+            "description": "Задание на импорт принято в обработку",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "success": {
+                  "type": "boolean",
+                  "example": true
+                },
+                "data": {
+                  "$ref": "#/definitions/ImportProgress"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Некорректный JSON-бандл",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
           }
         }
       }
     },
-    "/experiments/{id}/replay": {
+    "/api/v2/imports/{id}": {
+      "get": {
+        "tags": [
+          "XenoChoice v2 - Import/Export"
+        ],
+        "summary": "Получить статус и прогресс задания импорта",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string",
+            "example": "job-uuid"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Текущий прогресс импорта",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "success": {
+                  "type": "boolean",
+                  "example": true
+                },
+                "data": {
+                  "$ref": "#/definitions/ImportProgress"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Задание не найдено",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "XenoChoice v2 - Import/Export"
+        ],
+        "summary": "Отменить фоновое задание импорта",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string",
+            "example": "job-uuid"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Задание отменено",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "success": {
+                  "type": "boolean",
+                  "example": true
+                },
+                "data": {
+                  "$ref": "#/definitions/ImportProgress"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/experiments/{id}/replay": {
       "post": {
         "tags": [
-          "Experiments"
+          "XenoChoice v2 - Experiments"
         ],
         "summary": "Воспроизвести эксперимент от такта 0 до targetTick (Replay)",
         "description": "Запускает детерминированное повторение от начального состояния с тем же seed и вмешательствами, проверяя контрольную сумму SHA-256.",
@@ -485,7 +869,8 @@ const docTemplate = `{
               "type": "object",
               "properties": {
                 "success": {
-                  "type": "boolean"
+                  "type": "boolean",
+                  "example": true
                 },
                 "data": {
                   "$ref": "#/definitions/StateSnapshot"
@@ -496,12 +881,13 @@ const docTemplate = `{
         }
       }
     },
-    "/experiments/{id}/stream": {
+    "/api/v2/experiments/{id}/stream": {
       "get": {
         "tags": [
-          "Experiments"
+          "XenoChoice v2 - Streaming"
         ],
-        "summary": "WebSocket стриминг состояния мира в реальном времени (до 10 Гц)",
+        "summary": "WebSocket стриминг состояния мира в реальном времени (до 50 Гц)",
+        "description": "Двунаправленное постоянное соединение. Сервер непрерывно передает StateSnapshot, клиент может посылать команды.",
         "parameters": [
           {
             "name": "id",
@@ -512,13 +898,305 @@ const docTemplate = `{
         ],
         "responses": {
           "101": {
-            "description": "Переключение протокола на WebSocket"
+            "description": "Переключение протокола на WebSocket (Switching Protocols)"
+          }
+        }
+      }
+    },
+    "/api/v1/colonies": {
+      "get": {
+        "tags": [
+          "XenoChoice v1 - Legacy API"
+        ],
+        "summary": "Список всех колоний (v1)",
+        "responses": {
+          "200": {
+            "description": "Список колоний v1",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "success": {
+                  "type": "boolean",
+                  "example": true
+                },
+                "data": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/definitions/ColonyV1"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/colonies/{id}": {
+      "get": {
+        "tags": [
+          "XenoChoice v1 - Legacy API"
+        ],
+        "summary": "Получить колонию по ID (v1)",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Колония v1",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "success": {
+                  "type": "boolean",
+                  "example": true
+                },
+                "data": {
+                  "$ref": "#/definitions/ColonyV1"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/environment": {
+      "get": {
+        "tags": [
+          "XenoChoice v1 - Legacy API"
+        ],
+        "summary": "Состояние среды (v1)",
+        "responses": {
+          "200": {
+            "description": "Параметры среды v1",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "success": {
+                  "type": "boolean",
+                  "example": true
+                },
+                "data": {
+                  "$ref": "#/definitions/EnvironmentV1"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/environment/trigger": {
+      "post": {
+        "tags": [
+          "XenoChoice v1 - Legacy API"
+        ],
+        "summary": "Триггер события среды (v1)",
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "type": "object",
+              "properties": {
+                "event": {
+                  "type": "string",
+                  "example": "solar_flare"
+                },
+                "intensity": {
+                  "type": "number",
+                  "example": 1.5
+                }
+              }
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Событие применено"
+          }
+        }
+      }
+    },
+    "/api/v1/simulation/step": {
+      "post": {
+        "tags": [
+          "XenoChoice v1 - Legacy API"
+        ],
+        "summary": "Сделать один шаг симуляции (v1)",
+        "responses": {
+          "200": {
+            "description": "Шаг выполнен"
+          }
+        }
+      }
+    },
+    "/api/v1/simulation/reset": {
+      "post": {
+        "tags": [
+          "XenoChoice v1 - Legacy API"
+        ],
+        "summary": "Сбросить симуляцию (v1)",
+        "responses": {
+          "200": {
+            "description": "Симуляция сброшена"
+          }
+        }
+      }
+    },
+    "/api/v1/choice/allocate": {
+      "post": {
+        "tags": [
+          "XenoChoice v1 - Legacy API"
+        ],
+        "summary": "Аллокация ресурсов между колониями (v1)",
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "type": "object",
+              "properties": {
+                "sourceId": {
+                  "type": "string",
+                  "example": "col-1"
+                },
+                "targetId": {
+                  "type": "string",
+                  "example": "col-2"
+                },
+                "amount": {
+                  "type": "number",
+                  "example": 15.0
+                }
+              }
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Ресурсы перераспределены"
+          }
+        }
+      }
+    },
+    "/api/v1/choice/dilemmas": {
+      "get": {
+        "tags": [
+          "XenoChoice v1 - Legacy API"
+        ],
+        "summary": "Список этических и ресурсных дилемм (v1)",
+        "responses": {
+          "200": {
+            "description": "Список дилемм",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "success": {
+                  "type": "boolean",
+                  "example": true
+                },
+                "data": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "example": "dil-1"
+                      },
+                      "title": {
+                        "type": "string",
+                        "example": "Энергетический кризис"
+                      },
+                      "description": {
+                        "type": "string",
+                        "example": "Поделиться ли резервом с угасающей колонией?"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/choice/dilemmas/resolve": {
+      "post": {
+        "tags": [
+          "XenoChoice v1 - Legacy API"
+        ],
+        "summary": "Разрешить дилемму (v1)",
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "type": "object",
+              "properties": {
+                "dilemmaId": {
+                  "type": "string",
+                  "example": "dil-1"
+                },
+                "choice": {
+                  "type": "string",
+                  "example": "share"
+                }
+              }
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Решение принято"
+          }
+        }
+      }
+    },
+    "/api/v1/ws": {
+      "get": {
+        "tags": [
+          "XenoChoice v1 - Legacy API"
+        ],
+        "summary": "WebSocket хаб телеметрии и чата (v1)",
+        "responses": {
+          "101": {
+            "description": "Switching Protocols to WebSocket"
           }
         }
       }
     }
   },
   "definitions": {
+    "ErrorResponse": {
+      "type": "object",
+      "properties": {
+        "success": {
+          "type": "boolean",
+          "example": false
+        },
+        "error": {
+          "type": "object",
+          "properties": {
+            "code": {
+              "type": "string",
+              "example": "NOT_FOUND"
+            },
+            "message": {
+              "type": "string",
+              "example": "Experiment not found"
+            }
+          }
+        }
+      }
+    },
     "World": {
       "type": "object",
       "properties": {
@@ -531,102 +1209,163 @@ const docTemplate = `{
           "example": "Земля"
         },
         "description": {
-          "type": "string"
-        },
-        "reference": {
-          "$ref": "#/definitions/PlanetaryReference"
-        },
-        "scenario": {
-          "$ref": "#/definitions/LocalScenarioConfig"
-        },
-        "model": {
-          "$ref": "#/definitions/ModelConfig"
-        }
-      }
-    },
-    "PlanetaryReference": {
-      "type": "object",
-      "properties": {
-        "bodyName": {
           "type": "string",
-          "example": "Earth"
+          "example": "Минеральная емкостная среда с электрическим градиентом"
         },
-        "meanTemperatureCelsius": {
+        "radius": {
           "type": "number",
-          "example": 15.0
-        },
-        "temperatureKelvin": {
-          "type": "number",
-          "example": 288.15
+          "example": 6371.0
         },
         "gravity": {
           "type": "number",
-          "example": 9.8
+          "example": 9.81
         },
-        "surfacePressureBar": {
+        "surfacePressure": {
           "type": "number",
           "example": 1.0
         },
-        "source": {
-          "type": "string",
-          "example": "NASA Planetary Fact Sheet"
+        "meanTemperature": {
+          "type": "number",
+          "example": 288.0
         },
-        "sourceDate": {
-          "type": "string",
-          "example": "2025-03-18"
-        }
-      }
-    },
-    "LocalScenarioConfig": {
-      "type": "object",
-      "properties": {
-        "regionName": {
-          "type": "string"
-        },
-        "baseFlow": {
-          "type": "number"
-        },
-        "noiseAmplitude": {
-          "type": "number"
-        },
-        "specificParams": {
+        "model": {
           "type": "object",
-          "additionalProperties": {
-            "type": "number"
+          "properties": {
+            "energyType": {
+              "type": "string",
+              "example": "Электрический потенциал"
+            },
+            "sourceDescription": {
+              "type": "string",
+              "example": "Пьезо- и трибоэлектрические минеральные жилы"
+            },
+            "baseFlow": {
+              "type": "number",
+              "example": 10.0
+            },
+            "baseNoise": {
+              "type": "number",
+              "example": 0.1
+            },
+            "eMax": {
+              "type": "number",
+              "example": 100.0
+            },
+            "reserveTarget": {
+              "type": "number",
+              "example": 10.0
+            }
           }
         }
       }
     },
-    "ModelConfig": {
+    "CreateExperimentRequest": {
+      "type": "object",
+      "required": [
+        "worldId",
+        "seed"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "example": "Лаборатория Земля"
+        },
+        "worldId": {
+          "type": "string",
+          "example": "earth"
+        },
+        "mode": {
+          "type": "string",
+          "enum": [
+            "reactive",
+            "adaptive",
+            "evolutionary"
+          ],
+          "example": "evolutionary"
+        },
+        "seed": {
+          "type": "integer",
+          "example": 2048
+        }
+      }
+    },
+    "Experiment": {
       "type": "object",
       "properties": {
-        "organismType": {
+        "id": {
           "type": "string",
-          "example": "mineral_conductive"
+          "example": "exp-a1b2c3d4"
         },
-        "dt": {
+        "name": {
+          "type": "string",
+          "example": "Лаборатория Земля"
+        },
+        "worldId": {
+          "type": "string",
+          "example": "earth"
+        },
+        "mode": {
+          "type": "string",
+          "example": "evolutionary"
+        },
+        "status": {
+          "type": "string",
+          "example": "running"
+        },
+        "seed": {
+          "type": "integer",
+          "example": 2048
+        },
+        "speed": {
+          "type": "integer",
+          "example": 1
+        },
+        "latestSnapshot": {
+          "$ref": "#/definitions/StateSnapshot"
+        },
+        "createdAt": {
+          "type": "string",
+          "example": "2026-09-20T10:00:00Z"
+        }
+      }
+    },
+    "Genome": {
+      "type": "object",
+      "properties": {
+        "wE": {
           "type": "number",
+          "description": "Вес энергетической безопасности особи",
+          "example": 0.3
+        },
+        "wD": {
+          "type": "number",
+          "description": "Штраф за риск дефицита",
+          "example": 0.25
+        },
+        "wC": {
+          "type": "number",
+          "description": "Вес кооперации/помощи соседям",
+          "example": 0.2
+        },
+        "wR": {
+          "type": "number",
+          "description": "Вес воспроизводства/деления",
+          "example": 0.15
+        },
+        "wCost": {
+          "type": "number",
+          "description": "Штраф за необратимые затраты",
           "example": 0.1
         },
-        "eMax": {
+        "lambda": {
           "type": "number",
-          "example": 100.0
+          "description": "Коэффициент сохранения памяти M",
+          "example": 0.8
         },
-        "reserveTarget": {
+        "hThreshold": {
           "type": "number",
-          "example": 40.0
-        },
-        "maintenanceRate": {
-          "type": "number",
-          "example": 1.0
-        },
-        "maxPopulation": {
-          "type": "integer",
-          "example": 180
-        },
-        "maxColonies": {
-          "type": "integer",
-          "example": 12
+          "description": "Порог переключения действия h",
+          "example": 0.005
         }
       }
     },
@@ -635,53 +1374,105 @@ const docTemplate = `{
       "properties": {
         "id": {
           "type": "string",
-          "example": "ind-01"
-        },
-        "worldId": {
-          "type": "string",
-          "example": "earth"
+          "example": "ind-0019"
         },
         "colonyId": {
           "type": "string",
-          "example": "colony-01"
+          "example": "col-01"
         },
         "parentId": {
-          "type": "string"
+          "type": "string",
+          "example": "ind-06"
         },
         "lat": {
           "type": "number",
-          "example": 20.0
+          "example": 45.2
         },
         "lng": {
           "type": "number",
-          "example": 10.0
+          "example": 12.8
         },
         "energy": {
           "type": "number",
-          "example": 35.0
+          "example": 8.93
         },
         "biomass": {
           "type": "number",
-          "example": 5.0
+          "example": 20.0
         },
         "memory": {
           "type": "number",
-          "example": 0.0
+          "example": -0.003
         },
         "alive": {
           "type": "boolean",
           "example": true
         },
-        "age": {
-          "type": "integer",
-          "example": 12
-        },
         "generation": {
           "type": "integer",
-          "example": 1
+          "example": 2
+        },
+        "genome": {
+          "$ref": "#/definitions/Genome"
         },
         "lastDecision": {
           "$ref": "#/definitions/DecisionTrace"
+        }
+      }
+    },
+    "DecisionTrace": {
+      "type": "object",
+      "properties": {
+        "individualId": {
+          "type": "string",
+          "example": "ind-0019"
+        },
+        "tick": {
+          "type": "integer",
+          "example": 414
+        },
+        "selectedAction": {
+          "type": "string",
+          "enum": [
+            "STORE",
+            "TRANSFER",
+            "GROW",
+            "DIVIDE"
+          ],
+          "example": "STORE"
+        },
+        "selectedTarget": {
+          "type": "string",
+          "example": "ind-10"
+        },
+        "chosenScore": {
+          "type": "number",
+          "example": 0.2682
+        },
+        "reasoning": {
+          "type": "string",
+          "example": "Сохранение ресурса: ни одна альтернатива не превзошла порог h"
+        },
+        "scores": {
+          "type": "object",
+          "properties": {
+            "STORE": {
+              "type": "number",
+              "example": 0.2682
+            },
+            "TRANSFER": {
+              "type": "number",
+              "example": 0.2655
+            },
+            "GROW": {
+              "type": "number",
+              "example": -1.0
+            },
+            "DIVIDE": {
+              "type": "number",
+              "example": -1.0
+            }
+          }
         }
       }
     },
@@ -690,11 +1481,7 @@ const docTemplate = `{
       "properties": {
         "id": {
           "type": "string",
-          "example": "colony-01"
-        },
-        "worldId": {
-          "type": "string",
-          "example": "earth"
+          "example": "col-01"
         },
         "name": {
           "type": "string",
@@ -703,10 +1490,6 @@ const docTemplate = `{
         "color": {
           "type": "string",
           "example": "#3b82f6"
-        },
-        "formedAtTick": {
-          "type": "integer",
-          "example": 0
         },
         "individualIds": {
           "type": "array",
@@ -719,11 +1502,15 @@ const docTemplate = `{
           "properties": {
             "population": {
               "type": "integer",
-              "example": 6
+              "example": 12
             },
             "totalEnergy": {
               "type": "number",
-              "example": 210.0
+              "example": 115.03
+            },
+            "totalBiomass": {
+              "type": "number",
+              "example": 240.48
             }
           }
         }
@@ -734,27 +1521,27 @@ const docTemplate = `{
       "properties": {
         "id": {
           "type": "string",
-          "example": "ch-ind-01-ind-02"
+          "example": "ch-01-02"
         },
         "fromId": {
           "type": "string",
-          "example": "ind-01"
+          "example": "ind-0013"
         },
         "toId": {
           "type": "string",
-          "example": "ind-02"
+          "example": "ind-0041"
         },
         "distance": {
           "type": "number",
-          "example": 0.05
+          "example": 0.15
         },
-        "conductance": {
+        "maxPower": {
           "type": "number",
-          "example": 1.5
+          "example": 2.0
         },
         "loss": {
           "type": "number",
-          "example": 0.06
+          "example": 0.0762
         },
         "delayTicks": {
           "type": "integer",
@@ -766,69 +1553,122 @@ const docTemplate = `{
         }
       }
     },
-    "DecisionTrace": {
-      "type": "object",
-      "properties": {
-        "individualId": {
-          "type": "string",
-          "example": "ind-01"
-        },
-        "mode": {
-          "type": "string",
-          "example": "adaptive"
-        },
-        "tick": {
-          "type": "integer",
-          "example": 45
-        },
-        "selectedAction": {
-          "type": "string",
-          "example": "STORE"
-        },
-        "selectedTarget": {
-          "type": "string"
-        },
-        "scores": {
-          "type": "object",
-          "additionalProperties": {
-            "type": "number"
-          }
-        },
-        "chosenScore": {
-          "type": "number",
-          "example": 0.45
-        },
-        "reasoning": {
-          "type": "string"
-        }
-      }
-    },
-    "Intervention": {
+    "ResourcePacket": {
       "type": "object",
       "properties": {
         "id": {
           "type": "string",
-          "example": "inv-001"
+          "example": "pkt-1"
         },
+        "senderId": {
+          "type": "string",
+          "example": "ind-0013"
+        },
+        "receiverId": {
+          "type": "string",
+          "example": "ind-0041"
+        },
+        "sentEnergy": {
+          "type": "number",
+          "example": 0.2
+        },
+        "netEnergy": {
+          "type": "number",
+          "example": 0.185
+        },
+        "lossEnergy": {
+          "type": "number",
+          "example": 0.015
+        },
+        "deliveryTick": {
+          "type": "integer",
+          "example": 415
+        }
+      }
+    },
+    "EnergyBalance": {
+      "type": "object",
+      "properties": {
+        "initialStored": {
+          "type": "number",
+          "example": 480.0
+        },
+        "inoculated": {
+          "type": "number",
+          "example": 0.0
+        },
+        "externalInput": {
+          "type": "number",
+          "example": 1240.5
+        },
+        "currentStored": {
+          "type": "number",
+          "example": 890.2
+        },
+        "inTransit": {
+          "type": "number",
+          "example": 1.2
+        },
+        "maintenance": {
+          "type": "number",
+          "example": 620.4
+        },
+        "channelLoss": {
+          "type": "number",
+          "example": 45.1
+        },
+        "conversionLoss": {
+          "type": "number",
+          "example": 32.0
+        },
+        "divisionCost": {
+          "type": "number",
+          "example": 18.0
+        },
+        "deathDissipation": {
+          "type": "number",
+          "example": 113.6
+        }
+      }
+    },
+    "MetricsSnapshot": {
+      "type": "object",
+      "properties": {
         "tick": {
           "type": "integer",
-          "example": 100
+          "example": 656
         },
-        "sequence": {
+        "population": {
           "type": "integer",
-          "example": 0
+          "example": 28
         },
-        "type": {
-          "type": "string",
-          "example": "impulse"
+        "activeColonies": {
+          "type": "integer",
+          "example": 3
         },
-        "targetId": {
-          "type": "string",
-          "example": "earth"
-        },
-        "value": {
+        "usefulPower": {
           "type": "number",
-          "example": 2.0
+          "example": 123.241
+        },
+        "efficiency": {
+          "type": "number",
+          "example": 84.5
+        },
+        "decisionEntropy": {
+          "type": "number",
+          "example": 1.28
+        },
+        "deliveryLatency": {
+          "type": "number",
+          "example": 1.4
+        },
+        "meanWelfare": {
+          "type": "number",
+          "example": 88.4
+        },
+        "balanceResidual": {
+          "type": "number",
+          "example": 4.55e-12
         }
       }
     },
@@ -837,19 +1677,19 @@ const docTemplate = `{
       "properties": {
         "tick": {
           "type": "integer",
-          "example": 50
+          "example": 656
         },
         "revision": {
           "type": "integer",
-          "example": 51
+          "example": 656
         },
         "checksum": {
           "type": "string",
-          "example": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"
+          "example": "a3b84f29c0d1e..."
         },
-        "status": {
+        "mode": {
           "type": "string",
-          "example": "running"
+          "example": "evolutionary"
         },
         "world": {
           "$ref": "#/definitions/World"
@@ -872,116 +1712,17 @@ const docTemplate = `{
             "$ref": "#/definitions/Channel"
           }
         },
+        "inTransit": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ResourcePacket"
+          }
+        },
         "metrics": {
           "$ref": "#/definitions/MetricsSnapshot"
         },
         "balance": {
           "$ref": "#/definitions/EnergyBalance"
-        }
-      }
-    },
-    "MetricsSnapshot": {
-      "type": "object",
-      "properties": {
-        "tick": {
-          "type": "integer",
-          "example": 50
-        },
-        "population": {
-          "type": "integer",
-          "example": 12
-        },
-        "activeColonies": {
-          "type": "integer",
-          "example": 2
-        },
-        "survivalRate": {
-          "type": "number",
-          "example": 100.0
-        },
-        "inputPower": {
-          "type": "number",
-          "example": 85.4
-        },
-        "usefulPower": {
-          "type": "number",
-          "example": 68.2
-        },
-        "efficiency": {
-          "type": "number",
-          "example": 79.8
-        },
-        "decisionEntropy": {
-          "type": "number",
-          "example": 1.42
-        },
-        "balanceResidual": {
-          "type": "number",
-          "example": 1.5e-15
-        }
-      }
-    },
-    "EnergyBalance": {
-      "type": "object",
-      "properties": {
-        "initialStored": {
-          "type": "number",
-          "example": 480.0
-        },
-        "externalInput": {
-          "type": "number",
-          "example": 1250.0
-        },
-        "currentStored": {
-          "type": "number",
-          "example": 472.5
-        },
-        "inTransit": {
-          "type": "number",
-          "example": 14.2
-        },
-        "maintenance": {
-          "type": "number",
-          "example": 620.0
-        },
-        "channelLoss": {
-          "type": "number",
-          "example": 12.3
-        },
-        "deathDissipation": {
-          "type": "number",
-          "example": 0.0
-        }
-      }
-    },
-    "CreateExperimentRequest": {
-      "type": "object",
-      "properties": {
-        "name": {
-          "type": "string",
-          "example": "Минеральная эволюция на Земле"
-        },
-        "worldId": {
-          "type": "string",
-          "enum": [
-            "earth",
-            "mars",
-            "venus"
-          ],
-          "example": "earth"
-        },
-        "mode": {
-          "type": "string",
-          "enum": [
-            "reactive",
-            "adaptive",
-            "evolutionary"
-          ],
-          "example": "evolutionary"
-        },
-        "seed": {
-          "type": "integer",
-          "example": 42
         }
       }
     },
@@ -996,11 +1737,11 @@ const docTemplate = `{
           "enum": [
             "start",
             "pause",
-            "resume",
             "step",
-            "setSpeed"
+            "reset",
+            "speed"
           ],
-          "example": "step"
+          "example": "start"
         },
         "speed": {
           "type": "integer",
@@ -1010,10 +1751,71 @@ const docTemplate = `{
             5
           ],
           "example": 1
+        }
+      }
+    },
+    "InterventionRequest": {
+      "type": "object",
+      "required": [
+        "type",
+        "value"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "impulse",
+            "perturbation",
+            "depletion",
+            "set_channel",
+            "set_mode",
+            "set_flow",
+            "set_noise",
+            "toggle_mutations",
+            "add_inoculum"
+          ],
+          "example": "impulse"
         },
-        "expectedRevision": {
+        "targetId": {
+          "type": "string",
+          "example": "world"
+        },
+        "value": {
+          "type": "number",
+          "example": 2.5
+        },
+        "duration": {
           "type": "integer",
-          "example": 50
+          "example": 60
+        }
+      }
+    },
+    "Intervention": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "example": "event-123"
+        },
+        "tick": {
+          "type": "integer",
+          "example": 450
+        },
+        "sequence": {
+          "type": "integer",
+          "example": 1
+        },
+        "type": {
+          "type": "string",
+          "example": "impulse"
+        },
+        "targetId": {
+          "type": "string",
+          "example": "world"
+        },
+        "value": {
+          "type": "number",
+          "example": 2.5
         }
       }
     },
@@ -1025,67 +1827,127 @@ const docTemplate = `{
       "properties": {
         "targetTick": {
           "type": "integer",
-          "example": 100
+          "example": 500
+        }
+      }
+    },
+    "CompareResult": {
+      "type": "object",
+      "properties": {
+        "mode": {
+          "type": "string",
+          "example": "adaptive"
+        },
+        "metrics": {
+          "$ref": "#/definitions/MetricsSnapshot"
+        },
+        "history": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/MetricsSnapshot"
+          }
+        }
+      }
+    },
+    "ImportProgress": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "example": "job-uuid"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "running",
+            "completed",
+            "failed",
+            "cancelled"
+          ],
+          "example": "running"
+        },
+        "tick": {
+          "type": "integer",
+          "example": 350
+        },
+        "total": {
+          "type": "integer",
+          "example": 1000
+        },
+        "experimentId": {
+          "type": "string",
+          "example": "exp-a1b2c3d4"
+        },
+        "error": {
+          "type": "string",
+          "example": ""
         }
       }
     },
     "ExportBundle": {
       "type": "object",
+      "required": [
+        "schemaVersion",
+        "seed",
+        "world",
+        "finalSnapshot"
+      ],
       "properties": {
         "schemaVersion": {
           "type": "string",
-          "example": "2.0.0"
+          "example": "3.0.0"
         },
         "modelVersion": {
           "type": "string",
-          "example": "surface-ecology-2.0"
-        },
-        "experimentId": {
-          "type": "string",
-          "example": "exp-01"
+          "example": "surface-ecology-3.0"
         },
         "seed": {
           "type": "string",
-          "example": "42"
+          "example": "2048"
         },
         "world": {
           "$ref": "#/definitions/World"
+        },
+        "finalSnapshot": {
+          "$ref": "#/definitions/StateSnapshot"
         }
       }
     },
-    "Experiment": {
+    "ColonyV1": {
       "type": "object",
       "properties": {
         "id": {
           "type": "string",
-          "example": "exp-a1b2c3d4"
+          "example": "colony-1"
         },
         "name": {
           "type": "string",
-          "example": "Тестовый эксперимент"
+          "example": "Alpha"
         },
-        "worldId": {
-          "type": "string",
-          "example": "earth"
-        },
-        "mode": {
-          "type": "string",
-          "example": "evolutionary"
-        },
-        "status": {
-          "type": "string",
-          "example": "ready"
-        },
-        "seed": {
+        "population": {
           "type": "integer",
-          "example": 42
+          "example": 50
         },
-        "speed": {
-          "type": "integer",
-          "example": 1
+        "energy": {
+          "type": "number",
+          "example": 245.0
+        }
+      }
+    },
+    "EnvironmentV1": {
+      "type": "object",
+      "properties": {
+        "temperature": {
+          "type": "number",
+          "example": 295.0
         },
-        "latestSnapshot": {
-          "$ref": "#/definitions/StateSnapshot"
+        "radiation": {
+          "type": "number",
+          "example": 0.05
+        },
+        "resources": {
+          "type": "number",
+          "example": 1000.0
         }
       }
     }
@@ -1096,10 +1958,10 @@ const docTemplate = `{
 var SwaggerInfo = &swag.Spec{
 	Version:          "2.0.0",
 	Host:             "",
-	BasePath:         "/api/v2",
+	BasePath:         "",
 	Schemes:          []string{"http", "https", "ws", "wss"},
-	Title:            "XenoChoice Sandbox API v2 («Машина выбора»)",
-	Description:      "Авторитетный детерминированный движок симуляции небиологических сообществ на реальных планетах (Земля, Марс, Венера) по ТЗ v2",
+	Title:            "XenoChoice Sandbox API («Машина выбора»)",
+	Description:      "Авторитетный детерминированный движок симуляции небиологических сообществ на реальных планетах (Земля, Марс, Венера) по ТЗ v2 и ТЗ v1",
 	InfoInstanceName: "swagger",
 	SwaggerTemplate:  docTemplate,
 	LeftDelim:        "{{",

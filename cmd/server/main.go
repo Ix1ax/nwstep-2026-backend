@@ -16,19 +16,15 @@ import (
 	"github.com/ix1ax/nwstep-hackaton-2026/golang/pkg/storage"
 )
 
-// @title NWSTEP Hackathon 2026 API
-// @version 1.0
-// @description Hackathon boilerplate API documentation
+// @title XenoChoice Sandbox API («Машина выбора»)
+// @version 2.0
+// @description Авторитетный детерминированный движок симуляции небиологических сообществ на реальных планетах (Земля, Марс, Венера) по ТЗ v2 и ТЗ v1
 // @termsOfService http://swagger.io/terms/
-// @contact.name API Support
-// @contact.email support@nwstep.com
-// @license.name Apache 2.0
-// @license.url http://www.apache.org/licenses/LICENSE-2.0.html
+// @contact.name XenoChoice Team
+// @contact.email support@xenochoice.io
+// @license.name MIT
 // @host localhost:8080
-// @BasePath /api/v1
-// @securityDefinitions.apikey BearerAuth
-// @in header
-// @name Authorization
+// @BasePath /
 func main() {
 	cfg, err := config.Load()
 	if err != nil {
