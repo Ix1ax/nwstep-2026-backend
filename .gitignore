@@ -35,3 +35,4 @@ server
 main
 *.bin
 .DS_Store
+.cache/
