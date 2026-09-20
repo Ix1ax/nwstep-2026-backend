@@ -30,7 +30,7 @@ func (h *Handler) Allocate(c *fiber.Ctx) error {
 
 	result, err := h.service.ExecuteAllocation(req)
 	if err != nil {
-		return response.InternalError(c, err.Error())
+		return response.BadRequest(c, err.Error())
 	}
 	return response.OK(c, result)
 }
@@ -64,7 +64,7 @@ func (h *Handler) ResolveDilemma(c *fiber.Ctx) error {
 
 	result, err := h.service.ResolveDilemma(req)
 	if err != nil {
-		return response.InternalError(c, err.Error())
+		return response.BadRequest(c, err.Error())
 	}
 	return response.OK(c, result)
 }

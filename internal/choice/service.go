@@ -122,6 +122,16 @@ func (s *Service) seedDilemmas() {
 
 // ExecuteAllocation calculates the result of the slider: "Keep for self" vs "Give to neighbor".
 func (s *Service) ExecuteAllocation(req AllocationRequest) (*AllocationResponse, error) {
+	if req.SourceColonyID == "" && req.SourceColonyCamel != "" {
+		req.SourceColonyID = req.SourceColonyCamel
+	}
+	if req.TargetColonyID == "" && req.TargetColonyCamel != "" {
+		req.TargetColonyID = req.TargetColonyCamel
+	}
+	if req.SharePercent == 0 && req.SharePercentCamel != 0 {
+		req.SharePercent = req.SharePercentCamel
+	}
+
 	if req.SharePercent < 0 {
 		req.SharePercent = 0
 	}
@@ -196,6 +206,9 @@ func (s *Service) GetDilemmas() []Dilemma {
 
 // ResolveDilemma applies the selected philosophical decision engine to choose the winning alternative.
 func (s *Service) ResolveDilemma(req ResolveDilemmaRequest) (*ResolveDilemmaResponse, error) {
+	if req.DilemmaID == "" && req.DilemmaIDCamel != "" {
+		req.DilemmaID = req.DilemmaIDCamel
+	}
 	dilemma, ok := s.dilemmas[req.DilemmaID]
 	if !ok {
 		return nil, ErrDilemmaNotFound

@@ -2,10 +2,13 @@ package choice
 
 // AllocationRequest represents the slider movement ("Keep for self" vs "Give to neighbor").
 type AllocationRequest struct {
-	SourceColonyID string  `json:"source_colony_id"` // e.g. "jupiter"
-	TargetColonyID string  `json:"target_colony_id"` // e.g. "enceladus"
-	SharePercent   float64 `json:"share_percent"`    // 0.0 (all for self) to 100.0 (all to neighbor)
-	Policy         string  `json:"policy"`           // symbiosis, competition, entropy
+	SourceColonyID    string  `json:"source_colony_id"`
+	SourceColonyCamel string  `json:"sourceColonyId"`
+	TargetColonyID    string  `json:"target_colony_id"`
+	TargetColonyCamel string  `json:"targetColonyId"`
+	SharePercent      float64 `json:"share_percent"`
+	SharePercentCamel float64 `json:"sharePercent"`
+	Policy            string  `json:"policy"`
 }
 
 // AllocationResponse is the real-time physical outcome calculated by the Choice Machine.
@@ -41,8 +44,9 @@ type Alternative struct {
 
 // ResolveDilemmaRequest submits a dilemma to the Choice Machine with a chosen philosophy.
 type ResolveDilemmaRequest struct {
-	DilemmaID  string `json:"dilemma_id"`
-	Philosophy string `json:"philosophy"` // bentham, rawls, quadratic, entropy
+	DilemmaID      string `json:"dilemma_id"`
+	DilemmaIDCamel string `json:"dilemmaId"`
+	Philosophy     string `json:"philosophy"` // bentham, rawls, quadratic, entropy
 }
 
 // ResolveDilemmaResponse returns the calculated consensus.

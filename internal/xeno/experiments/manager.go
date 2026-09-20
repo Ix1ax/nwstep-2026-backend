@@ -15,6 +15,7 @@ import (
 	"github.com/ix1ax/nwstep-hackaton-2026/golang/internal/xeno/environment"
 	"github.com/ix1ax/nwstep-hackaton-2026/golang/internal/xeno/model"
 	"github.com/ix1ax/nwstep-hackaton-2026/golang/internal/xeno/prng"
+	"github.com/ix1ax/nwstep-hackaton-2026/golang/internal/xeno/store"
 	"github.com/rs/zerolog"
 )
 
@@ -50,6 +51,8 @@ type Experiment struct {
 
 	loopGeneration uint64
 	broadcastFunc  func(snapshot *model.StateSnapshot, expID string)
+	pgRepo         *store.PostgresRepository
+	redisCache     *store.RedisCache
 }
 
 // Manager управляет жизненным циклом экспериментов в памяти процесса
@@ -57,6 +60,8 @@ type Manager struct {
 	mu          sync.RWMutex
 	experiments map[string]*Experiment
 	log         zerolog.Logger
+	pgRepo      *store.PostgresRepository
+	redisCache  *store.RedisCache
 }
 
 // NewManager создает новый менеджер экспериментов
@@ -65,6 +70,14 @@ func NewManager(log zerolog.Logger) *Manager {
 		experiments: make(map[string]*Experiment),
 		log:         log,
 	}
+}
+
+// SetStore binds PostgreSQL repository and Redis cache to the manager
+func (m *Manager) SetStore(pg *store.PostgresRepository, rc *store.RedisCache) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.pgRepo = pg
+	m.redisCache = rc
 }
 
 // CreateExperiment создает новый эксперимент на выбранной планете
@@ -155,6 +168,8 @@ func (m *Manager) CreateExperiment(
 		CreatedAt:       time.Now(),
 		UpdatedAt:       time.Now(),
 		broadcastFunc:   broadcastFunc,
+		pgRepo:          m.pgRepo,
+		redisCache:      m.redisCache,
 	}
 
 	exp.MetricsHistory = append(exp.MetricsHistory, &initSnapshot.Metrics)
@@ -164,7 +179,45 @@ func (m *Manager) CreateExperiment(
 	initSnapshot.Interventions = interventions
 	m.experiments[id] = exp
 
+	if m.pgRepo != nil {
+		go func(p *store.PersistedExperiment) {
+			_ = m.pgRepo.SaveExperiment(context.Background(), p)
+		}(exp.ToPersisted())
+	}
+	if m.redisCache != nil {
+		go func(eid string, snap *model.StateSnapshot) {
+			_ = m.redisCache.CacheSnapshot(context.Background(), eid, snap)
+		}(exp.ID, initSnapshot)
+	}
+
 	return exp
+}
+
+// toPersistedLocked converts in-memory Experiment into store.PersistedExperiment without locking (must hold exp.mu)
+func (exp *Experiment) toPersistedLocked() *store.PersistedExperiment {
+	var p store.PersistedExperiment
+	p.ID = exp.ID
+	p.Name = exp.Name
+	p.WorldID = exp.WorldID
+	p.Mode = exp.Mode
+	p.Status = exp.Status
+	p.Seed = exp.Seed
+	p.Speed = exp.Speed
+	p.Parameters = exp.Parameters
+	p.Interventions = exp.Interventions
+	p.InitialSnapshot = exp.InitialSnapshot
+	p.LatestSnapshot = exp.LatestSnapshot
+	p.MetricsHistory = exp.MetricsHistory
+	p.CreatedAt = exp.CreatedAt
+	p.UpdatedAt = exp.UpdatedAt
+	return &p
+}
+
+// ToPersisted converts in-memory Experiment into store.PersistedExperiment
+func (exp *Experiment) ToPersisted() *store.PersistedExperiment {
+	exp.mu.RLock()
+	defer exp.mu.RUnlock()
+	return exp.toPersistedLocked()
 }
 
 // GetExperiment возвращает эксперимент по ID
@@ -210,6 +263,9 @@ func (exp *Experiment) SendCommand(cmd string, speed int) error {
 		exp.Status = model.StatusRunning
 		exp.UpdatedAt = time.Now()
 		exp.loopGeneration++
+		if exp.redisCache != nil {
+			_ = exp.redisCache.TrackActive(context.Background(), exp.ID, true)
+		}
 		go exp.runLoop(exp.loopGeneration)
 
 	case "pause":
@@ -219,6 +275,14 @@ func (exp *Experiment) SendCommand(cmd string, speed int) error {
 		exp.Status = model.StatusPaused
 		exp.loopGeneration++
 		exp.UpdatedAt = time.Now()
+		if exp.redisCache != nil {
+			_ = exp.redisCache.TrackActive(context.Background(), exp.ID, false)
+		}
+		if exp.pgRepo != nil {
+			go func(p *store.PersistedExperiment) {
+				_ = exp.pgRepo.UpdateExperimentState(context.Background(), p.ID, p.Status, p.LatestSnapshot, p.MetricsHistory, p.Speed)
+			}(exp.toPersistedLocked())
+		}
 
 	case "step":
 		if exp.State.Tick >= 2000 {
@@ -241,6 +305,17 @@ func (exp *Experiment) SendCommand(cmd string, speed int) error {
 		exp.UpdatedAt = time.Now()
 		if exp.broadcastFunc != nil {
 			exp.broadcastFunc(snapshot, exp.ID)
+		}
+		if exp.redisCache != nil {
+			go func(eid string, snap *model.StateSnapshot) {
+				_ = exp.redisCache.CacheSnapshot(context.Background(), eid, snap)
+			}(exp.ID, snapshot)
+		}
+		if exp.pgRepo != nil {
+			go func(p *store.PersistedExperiment, mSnap *model.MetricsSnapshot) {
+				_ = exp.pgRepo.UpdateExperimentState(context.Background(), p.ID, p.Status, p.LatestSnapshot, p.MetricsHistory, p.Speed)
+				_ = exp.pgRepo.SaveMetricsSnapshot(context.Background(), p.ID, mSnap)
+			}(exp.toPersistedLocked(), metrics)
 		}
 
 	case "setSpeed":
@@ -382,6 +457,23 @@ func (exp *Experiment) runLoop(generation uint64) {
 		exp.MetricsHistory = append(exp.MetricsHistory, metrics)
 		exp.UpdatedAt = time.Now()
 
+		// Real-time Redis cache update
+		if exp.redisCache != nil {
+			go func(eid string, snap *model.StateSnapshot) {
+				_ = exp.redisCache.CacheSnapshot(context.Background(), eid, snap)
+			}(exp.ID, snapshot)
+		}
+
+		// Periodic PostgreSQL persistence
+		if snapshot.Tick%5 == 0 || metrics.Population == 0 || snapshot.Tick >= 2000 {
+			if exp.pgRepo != nil {
+				go func(p *store.PersistedExperiment, mSnap *model.MetricsSnapshot) {
+					_ = exp.pgRepo.UpdateExperimentState(context.Background(), p.ID, p.Status, p.LatestSnapshot, p.MetricsHistory, p.Speed)
+					_ = exp.pgRepo.SaveMetricsSnapshot(context.Background(), p.ID, mSnap)
+				}(exp.toPersistedLocked(), metrics)
+			}
+		}
+
 		if metrics.Population == 0 {
 			exp.Status = model.StatusCompleted
 			snapshot.Status = exp.Status
@@ -415,6 +507,14 @@ func (exp *Experiment) runLoop(generation uint64) {
 		baseDelay := 100 * time.Millisecond
 		actualDelay := baseDelay / time.Duration(speed)
 		time.Sleep(actualDelay)
+	}
+
+	// Cleanup active state on loop exit
+	if exp.redisCache != nil {
+		_ = exp.redisCache.TrackActive(context.Background(), exp.ID, false)
+	}
+	if exp.pgRepo != nil {
+		_ = exp.pgRepo.SaveExperiment(context.Background(), exp.ToPersisted())
 	}
 }
 
@@ -523,6 +623,19 @@ func (exp *Experiment) AddIntervention(it model.Intervention) (*model.Interventi
 	it.Sequence = len(exp.Interventions) + 1
 	exp.Interventions = append(exp.Interventions, &it)
 	exp.State.Interventions = exp.Interventions
+
+	if exp.pgRepo != nil {
+		go func(eid string, itCopy model.Intervention, p *store.PersistedExperiment) {
+			_ = exp.pgRepo.SaveIntervention(context.Background(), eid, &itCopy)
+			_ = exp.pgRepo.SaveExperiment(context.Background(), p)
+		}(exp.ID, it, exp.toPersistedLocked())
+	}
+	if exp.redisCache != nil {
+		go func(eid string, snap *model.StateSnapshot) {
+			_ = exp.redisCache.CacheSnapshot(context.Background(), eid, snap)
+		}(exp.ID, exp.LatestSnapshot)
+	}
+
 	return &it, nil
 }
 func ValidMode(mode model.Mode) bool {
@@ -563,6 +676,175 @@ func (m *Manager) Remove(id string) {
 		exp.SendCommand("pause", 1)
 		delete(m.experiments, id)
 	}
+	if m.pgRepo != nil {
+		go func() {
+			_ = m.pgRepo.DeleteExperiment(context.Background(), id)
+		}()
+	}
+	if m.redisCache != nil {
+		go func() {
+			_ = m.redisCache.InvalidateExperiment(context.Background(), id)
+		}()
+	}
+}
+
+// RestoreFromDB restores experiments from PostgreSQL into the in-memory manager
+func (m *Manager) RestoreFromDB(ctx context.Context, broadcast func(*model.StateSnapshot, string)) error {
+	if m.pgRepo == nil {
+		return nil
+	}
+
+	savedList, err := m.pgRepo.ListExperiments(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to list experiments from PostgreSQL: %w", err)
+	}
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	for _, saved := range savedList {
+		if saved == nil || saved.ID == "" {
+			continue
+		}
+		if _, exists := m.experiments[saved.ID]; exists {
+			continue
+		}
+
+		params := saved.Parameters
+		initSnapshot, interventions := BuildWorldScenario(saved.WorldID, saved.Mode, saved.Seed, params)
+		eng := engine.NewEngine(params)
+		streams := prng.NewStreams(saved.Seed)
+		env := environment.NewEnvironmentModule(initSnapshot.World)
+
+		indMap := make(map[string]*model.Individual)
+		for _, ind := range initSnapshot.Individuals {
+			cp := ind
+			indMap[ind.ID] = &cp
+		}
+		colMap := make(map[string]*model.Colony)
+		for _, col := range initSnapshot.Colonies {
+			cp := col
+			colMap[col.ID] = &cp
+		}
+		chMap := make(map[string]*model.Channel)
+		for _, ch := range initSnapshot.Channels {
+			cp := ch
+			chMap[ch.ID] = &cp
+		}
+
+		allInterventions := saved.Interventions
+		if len(allInterventions) == 0 {
+			allInterventions = interventions
+		}
+
+		stState := &engine.StepState{
+			Tick:          0,
+			Revision:      1,
+			Mode:          saved.Mode,
+			World:         initSnapshot.World,
+			Env:           env,
+			Individuals:   indMap,
+			Colonies:      colMap,
+			Channels:      chMap,
+			InTransit:     make([]*model.ResourcePacket, 0),
+			Signals:       make([]*model.SignalMessage, 0),
+			Balance:       initSnapshot.Balance,
+			Streams:       streams,
+			InitialCount:  len(indMap),
+			Interventions: allInterventions,
+			NextColonyNum: len(colMap) + 1,
+		}
+
+		exp := &Experiment{
+			ID:              saved.ID,
+			Name:            saved.Name,
+			WorldID:         saved.WorldID,
+			Mode:            saved.Mode,
+			Status:          saved.Status,
+			Seed:            saved.Seed,
+			Speed:           saved.Speed,
+			Parameters:      saved.Parameters,
+			Interventions:   allInterventions,
+			State:           stState,
+			Engine:          eng,
+			InitialSnapshot: saved.InitialSnapshot,
+			LatestSnapshot:  saved.LatestSnapshot,
+			MetricsHistory:  saved.MetricsHistory,
+			StopChan:        make(chan struct{}),
+			Log:             m.log.With().Str("expID", saved.ID).Logger(),
+			CreatedAt:       saved.CreatedAt,
+			UpdatedAt:       saved.UpdatedAt,
+			broadcastFunc:   broadcast,
+			pgRepo:          m.pgRepo,
+			redisCache:      m.redisCache,
+		}
+
+		if exp.InitialSnapshot == nil {
+			exp.InitialSnapshot = initSnapshot
+		}
+		if exp.LatestSnapshot == nil {
+			exp.LatestSnapshot = initSnapshot
+		}
+		if len(exp.MetricsHistory) == 0 {
+			exp.MetricsHistory = []*model.MetricsSnapshot{&exp.InitialSnapshot.Metrics}
+		}
+
+		// If the experiment was previously stepped, replay engine state
+		if exp.LatestSnapshot.Tick > 0 {
+			for stState.Tick < exp.LatestSnapshot.Tick {
+				snap, mSnap, err := eng.Step(stState)
+				if err != nil {
+					break
+				}
+				exp.LatestSnapshot = snap
+				_ = mSnap
+			}
+		}
+
+		// Ensure loaded experiments start in Paused status if they were running
+		if exp.Status == model.StatusRunning {
+			exp.Status = model.StatusPaused
+		}
+		exp.LatestSnapshot.Status = exp.Status
+
+		m.experiments[exp.ID] = exp
+
+		if m.redisCache != nil {
+			go func(eid string, snap *model.StateSnapshot, mHist []*model.MetricsSnapshot) {
+				_ = m.redisCache.CacheSnapshot(context.Background(), eid, snap)
+				_ = m.redisCache.CacheMetrics(context.Background(), eid, mHist)
+			}(exp.ID, exp.LatestSnapshot, exp.MetricsHistory)
+		}
+	}
+
+	m.log.Info().Int("count", len(savedList)).Msg("Experiments successfully restored from PostgreSQL")
+	return nil
+}
+
+// StartDBSync launches background periodic sync of active experiments to PostgreSQL
+func (m *Manager) StartDBSync(interval time.Duration) {
+	if m.pgRepo == nil {
+		return
+	}
+	if interval <= 0 {
+		interval = 5 * time.Second
+	}
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for range ticker.C {
+			m.mu.RLock()
+			for _, exp := range m.experiments {
+				if exp != nil && (exp.Status == model.StatusRunning || exp.Status == model.StatusPaused) {
+					p := exp.ToPersisted()
+					go func(pers *store.PersistedExperiment) {
+						_ = m.pgRepo.UpdateExperimentState(context.Background(), pers.ID, pers.Status, pers.LatestSnapshot, pers.MetricsHistory, pers.Speed)
+					}(p)
+				}
+			}
+			m.mu.RUnlock()
+		}
+	}()
 }
 
 // Adopt publishes a fully restored experiment only after its checksum has passed.
@@ -573,6 +855,20 @@ func (m *Manager) Adopt(exp *Experiment, broadcast func(*model.StateSnapshot, st
 		return errors.New("experiment limit reached")
 	}
 	exp.broadcastFunc = broadcast
+	exp.pgRepo = m.pgRepo
+	exp.redisCache = m.redisCache
 	m.experiments[exp.ID] = exp
+
+	if m.pgRepo != nil {
+		go func(p *store.PersistedExperiment) {
+			_ = m.pgRepo.SaveExperiment(context.Background(), p)
+		}(exp.ToPersisted())
+	}
+	if m.redisCache != nil && exp.LatestSnapshot != nil {
+		go func(eid string, snap *model.StateSnapshot) {
+			_ = m.redisCache.CacheSnapshot(context.Background(), eid, snap)
+		}(exp.ID, exp.LatestSnapshot)
+	}
+
 	return nil
 }

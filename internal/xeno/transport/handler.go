@@ -1,6 +1,7 @@
 package transport
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"strconv"
@@ -12,6 +13,7 @@ import (
 	"github.com/ix1ax/nwstep-hackaton-2026/golang/internal/xeno/experiments"
 	"github.com/ix1ax/nwstep-hackaton-2026/golang/internal/xeno/export"
 	"github.com/ix1ax/nwstep-hackaton-2026/golang/internal/xeno/model"
+	"github.com/ix1ax/nwstep-hackaton-2026/golang/internal/xeno/store"
 	"github.com/ix1ax/nwstep-hackaton-2026/golang/pkg/response"
 	"github.com/rs/zerolog"
 )
@@ -24,6 +26,8 @@ type Handler struct {
 	log         zerolog.Logger
 	wsMu        sync.RWMutex
 	wsRooms     map[string]map[*websocket.Conn]bool // expID -> conns
+	pgRepo      *store.PostgresRepository
+	redisCache  *store.RedisCache
 }
 
 func NewHandler(manager *experiments.Manager, log zerolog.Logger) *Handler {
@@ -34,6 +38,12 @@ func NewHandler(manager *experiments.Manager, log zerolog.Logger) *Handler {
 		imports:     make(map[string]*importJob),
 		importSlots: make(chan struct{}, 2),
 	}
+}
+
+// SetStore binds PostgreSQL repository and Redis cache to the transport handler
+func (h *Handler) SetStore(pg *store.PostgresRepository, rc *store.RedisCache) {
+	h.pgRepo = pg
+	h.redisCache = rc
 }
 
 // BroadcastSnapshot отправляет снимок состояния подписчикам WebSocket
@@ -69,11 +79,30 @@ func (h *Handler) BroadcastSnapshot(snapshot *model.StateSnapshot, expID string)
 			delete(clients, conn)
 		}
 	}
+
+	// Real-time broadcast over Redis Pub/Sub
+	if h.redisCache != nil {
+		go func() {
+			_ = h.redisCache.PublishSnapshot(context.Background(), expID, data)
+			_ = h.redisCache.CacheSnapshot(context.Background(), expID, snapshot)
+		}()
+	}
 }
 
 // GetWorlds возвращает каталог планет со справочными параметрами NASA (раздел 5 ТЗ v2)
 func (h *Handler) GetWorlds(c *fiber.Ctx) error {
+	if h.redisCache != nil {
+		if cached, err := h.redisCache.GetCachedWorlds(c.Context()); err == nil && len(cached) > 0 {
+			return response.OK(c, cached)
+		}
+	}
+
 	worlds := model.GetPresetWorlds()
+	if h.redisCache != nil {
+		go func() {
+			_ = h.redisCache.CacheWorlds(context.Background(), worlds)
+		}()
+	}
 	return response.OK(c, worlds)
 }
 
@@ -197,11 +226,22 @@ func (h *Handler) AddIntervention(c *fiber.Ctx) error {
 // GetStateSnapshot возвращает снимок состояния мира и чексумму SHA-256
 func (h *Handler) GetStateSnapshot(c *fiber.Ctx) error {
 	id := c.Params("id")
+	if h.redisCache != nil {
+		if cached, err := h.redisCache.GetCachedSnapshot(c.Context(), id); err == nil && cached != nil {
+			return response.OK(c, cached)
+		}
+	}
 	exp, err := h.manager.GetExperiment(id)
 	if err != nil {
 		return response.NotFound(c, "Experiment not found")
 	}
-	return response.OK(c, exp.View().LatestSnapshot)
+	snap := exp.View().LatestSnapshot
+	if h.redisCache != nil && snap != nil {
+		go func() {
+			_ = h.redisCache.CacheSnapshot(context.Background(), id, snap)
+		}()
+	}
+	return response.OK(c, snap)
 }
 
 // GetColony возвращает детальное состояние колонии и список её особей
@@ -262,17 +302,43 @@ func (h *Handler) GetIndividual(c *fiber.Ctx) error {
 // GetMetrics возвращает историю метрик
 func (h *Handler) GetMetrics(c *fiber.Ctx) error {
 	id := c.Params("id")
+	fromTick := c.QueryInt("from", -1)
+	toTick := c.QueryInt("to", -1)
+
+	// If default full history is requested, check Redis cache
+	if fromTick == -1 && toTick == -1 && h.redisCache != nil {
+		if cached, err := h.redisCache.GetCachedMetrics(c.Context(), id); err == nil && len(cached) > 0 {
+			return response.OK(c, cached)
+		}
+	}
+
 	exp, err := h.manager.GetExperiment(id)
 	if err != nil {
 		return response.NotFound(c, "Experiment not found")
 	}
 
-	fromTick := c.QueryInt("from", 0)
-	toTick := c.QueryInt("to", 100000)
+	history := exp.View().MetricsHistory
+	if fromTick == -1 && toTick == -1 {
+		if h.redisCache != nil {
+			go func() {
+				_ = h.redisCache.CacheMetrics(context.Background(), id, history)
+			}()
+		}
+		return response.OK(c, history)
+	}
+
+	minT := int64(fromTick)
+	if minT < 0 {
+		minT = 0
+	}
+	maxT := int64(toTick)
+	if maxT < 0 {
+		maxT = 100000
+	}
 
 	filtered := make([]*model.MetricsSnapshot, 0)
-	for _, m := range exp.View().MetricsHistory {
-		if m.Tick >= int64(fromTick) && m.Tick <= int64(toTick) {
+	for _, m := range history {
+		if m.Tick >= minT && m.Tick <= maxT {
 			filtered = append(filtered, m)
 		}
 	}

@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"encoding/json"
 	"time"
 
@@ -48,15 +49,15 @@ func SetupRoutes(app *App) {
 	choiceModule := choice.NewModule(colonyModule.Service, app.Log)
 	choiceModule.Register(v1)
 
-	// 🔬 XenoChoice Sandbox Engine («Машина выбора» по ТЗ v1 и v2)
-	xenoModule := xeno.NewModule(app.Log)
+	// 🔬 XenoChoice Sandbox Engine («Машина выбора» по ТЗ v1 и v2) с поддержкой PostgreSQL и Redis
+	xenoModule := xeno.NewModuleWithDB(app.Log, app.DB, app.RDB)
 	xenoModule.Register(v1)
 
 	// API v2 (ТЗ v2: миры, особи, колонии, replay)
 	v2 := app.Fiber.Group("/api/v2")
 	xenoModule.RegisterV2(v2)
 
-	// Background simulation ticker: advances physical state and broadcasts telemetry to WebSockets
+	// Background simulation ticker: advances physical state and broadcasts telemetry to WebSockets and Redis Pub/Sub
 	go func() {
 		ticker := time.NewTicker(2 * time.Second)
 		defer ticker.Stop()
@@ -73,6 +74,9 @@ func SetupRoutes(app *App) {
 
 			if b, err := json.Marshal(telemetry); err == nil {
 				wsHub.Broadcast(b)
+				if xenoModule.RedisCache != nil {
+					_ = xenoModule.RedisCache.PublishTelemetry(context.Background(), b)
+				}
 			}
 		}
 	}()

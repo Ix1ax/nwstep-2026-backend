@@ -1,36 +1,82 @@
 package xeno
 
 import (
+	"context"
+	"os"
+	"time"
+
 	"github.com/gofiber/contrib/websocket"
 	"github.com/gofiber/fiber/v2"
 	"github.com/ix1ax/nwstep-hackaton-2026/golang/internal/xeno/experiments"
+	"github.com/ix1ax/nwstep-hackaton-2026/golang/internal/xeno/store"
 	"github.com/ix1ax/nwstep-hackaton-2026/golang/internal/xeno/transport"
+	"github.com/jmoiron/sqlx"
+	"github.com/redis/go-redis/v9"
 	"github.com/rs/zerolog"
-	"os"
 )
 
 // Module инкапсулирует подсистему XenoChoice Sandbox («Машина выбора» ТЗ v2)
 // Обеспечивает детерминированную симуляцию небиологических сообществ на реальных планетах (Земля, Марс, Венера),
 // управление жизненным циклом экспериментов, replay и WebSocket/REST интерфейсы.
 type Module struct {
-	Manager *experiments.Manager
-	Handler *transport.Handler
+	Manager    *experiments.Manager
+	Handler    *transport.Handler
+	PGRepo     *store.PostgresRepository
+	RedisCache *store.RedisCache
 }
 
-// NewModule инициализирует модуль симуляции XenoChoice
+// NewModule инициализирует модуль симуляции XenoChoice без внешних сервисов
 func NewModule(log zerolog.Logger) *Module {
+	return NewModuleWithDB(log, nil, nil)
+}
+
+// NewModuleWithDB инициализирует модуль симуляции XenoChoice с подключением к PostgreSQL и Redis
+func NewModuleWithDB(log zerolog.Logger, db *sqlx.DB, rdb *redis.Client) *Module {
 	manager := experiments.NewManager(log)
 	handler := transport.NewHandler(manager, log)
-	if dir := os.Getenv("XENO_DATA_DIR"); dir != "" {
+
+	var pgRepo *store.PostgresRepository
+	var redisCache *store.RedisCache
+
+	if db != nil {
+		pgRepo = store.NewPostgresRepository(db, log)
+	}
+	if rdb != nil {
+		redisCache = store.NewRedisCache(rdb, log)
+	}
+
+	if pgRepo != nil || redisCache != nil {
+		manager.SetStore(pgRepo, redisCache)
+		handler.SetStore(pgRepo, redisCache)
+	}
+
+	// Restore previous experiments from PostgreSQL if DB is available
+	if pgRepo != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		if err := manager.RestoreFromDB(ctx, handler.BroadcastSnapshot); err != nil {
+			log.Error().Err(err).Msg("Failed to restore experiments from PostgreSQL")
+		} else {
+			log.Info().Msg("PostgreSQL persistence enabled and verified")
+		}
+		cancel()
+		manager.StartDBSync(5 * time.Second)
+	} else if dir := os.Getenv("XENO_DATA_DIR"); dir != "" {
 		if err := manager.Restore(dir, handler.BroadcastSnapshot); err != nil {
 			log.Error().Err(err).Msg("Cannot restore research checkpoint; automatic saves disabled to preserve recovery data")
 		} else {
 			manager.StartCheckpoints(dir)
 		}
 	}
+
+	if redisCache != nil {
+		log.Info().Msg("Redis caching and PubSub streaming enabled")
+	}
+
 	return &Module{
-		Manager: manager,
-		Handler: handler,
+		Manager:    manager,
+		Handler:    handler,
+		PGRepo:     pgRepo,
+		RedisCache: redisCache,
 	}
 }
 
