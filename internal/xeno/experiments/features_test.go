@@ -111,6 +111,9 @@ func TestReplayCancellationAndCompletionLimit(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Logf("2000 ticks restored in %s", time.Since(start))
+	if v := e.View(); v.Status != model.StatusCompleted || v.LatestSnapshot.Status != model.StatusCompleted {
+		t.Fatal("completed replay must report completed status")
+	}
 	if err := e.SendCommand("step", 1); err == nil {
 		t.Fatal("stepped beyond replay limit")
 	}

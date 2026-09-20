@@ -61,11 +61,18 @@ func (m *Manager) Restore(dir string, broadcast func(*model.StateSnapshot, strin
 	if p.Version != "surface-ecology-3.0" {
 		return fmt.Errorf("unsupported checkpoint model")
 	}
+	// Validate and replay into a staging manager; failures must not publish partial state.
+	staged := NewManager(m.log)
+	seen := make(map[string]bool)
 	for _, saved := range p.Experiments {
-		if saved == nil || saved.LatestSnapshot == nil || saved.LatestSnapshot.Tick > 2000 || !ValidMode(saved.Mode) {
+		if saved == nil || saved.LatestSnapshot == nil || saved.LatestSnapshot.Tick < 0 || saved.LatestSnapshot.Tick > 2000 || !ValidMode(saved.Mode) || saved.ID == "" || seen[saved.ID] {
 			return fmt.Errorf("invalid checkpoint")
 		}
-		exp := m.CreateExperiment(saved.Name, saved.WorldID, saved.Mode, saved.Seed, broadcast)
+		if _, ok := model.FindWorldByID(saved.WorldID); !ok {
+			return fmt.Errorf("invalid checkpoint world")
+		}
+		seen[saved.ID] = true
+		exp := staged.CreateExperiment(saved.Name, saved.WorldID, saved.Mode, saved.Seed, broadcast)
 		exp.Parameters = saved.Parameters
 		exp.Interventions = saved.Interventions
 		snap, err := exp.Replay(saved.LatestSnapshot.Tick)
@@ -75,12 +82,20 @@ func (m *Manager) Restore(dir string, broadcast func(*model.StateSnapshot, strin
 		if saved.LatestSnapshot.Tick > 0 && snap.Checksum != saved.LatestSnapshot.Checksum {
 			return fmt.Errorf("checkpoint mismatch for %s", saved.ID)
 		}
-		m.mu.Lock()
-		delete(m.experiments, exp.ID)
+		delete(staged.experiments, exp.ID)
 		exp.ID = saved.ID
 		exp.CreatedAt = saved.CreatedAt
-		m.experiments[exp.ID] = exp
-		m.mu.Unlock()
+		staged.experiments[exp.ID] = exp
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for id := range staged.experiments {
+		if _, exists := m.experiments[id]; exists {
+			return fmt.Errorf("checkpoint experiment already exists: %s", id)
+		}
+	}
+	for id, exp := range staged.experiments {
+		m.experiments[id] = exp
 	}
 	return nil
 }

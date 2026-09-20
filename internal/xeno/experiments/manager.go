@@ -232,6 +232,9 @@ func (exp *Experiment) SendCommand(cmd string, speed int) error {
 			exp.Status = model.StatusError
 			return err
 		}
+		if snapshot.Tick >= 2000 {
+			exp.Status = model.StatusCompleted
+		}
 		snapshot.Status = exp.Status
 		exp.LatestSnapshot = snapshot
 		exp.MetricsHistory = append(exp.MetricsHistory, metrics)
@@ -343,9 +346,12 @@ func (exp *Experiment) ReplayContext(ctx context.Context, targetTick int64, prog
 		}
 	}
 
-	latestSnap.Status = model.StatusPaused
-	latestSnap.Mode = stState.Mode
 	exp.Status = model.StatusPaused
+	if targetTick >= 2000 {
+		exp.Status = model.StatusCompleted
+	}
+	latestSnap.Status = exp.Status
+	latestSnap.Mode = stState.Mode
 	exp.State = stState
 	exp.LatestSnapshot = latestSnap
 	exp.MetricsHistory = metricsHistory

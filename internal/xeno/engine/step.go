@@ -607,10 +607,14 @@ func (eng *Engine) Step(st *StepState) (*model.StateSnapshot, *model.MetricsSnap
 	var currentStored float64
 	var livingCount int
 	var initialLivingCount int
+	var founderCount int
 	var sumWelfare float64
 
 	for _, id := range getSortedIndividualIDs(st.Individuals) {
 		ind := st.Individuals[id]
+		if ind.ParentID == nil {
+			founderCount++
+		}
 		if ind.Alive {
 			livingCount++
 			currentStored += (ind.Energy + eng.params.KB*ind.Biomass)
@@ -653,8 +657,9 @@ func (eng *Engine) Step(st *StepState) (*model.StateSnapshot, *model.MetricsSnap
 	}
 
 	survivalRate := 0.0
-	if st.InitialCount > 0 {
-		survivalRate = (float64(initialLivingCount) / float64(st.InitialCount)) * 100.0
+	if founderCount > 0 {
+		// Include researcher-inoculated founders in both numerator and denominator.
+		survivalRate = (float64(initialLivingCount) / float64(founderCount)) * 100.0
 	}
 
 	meanWelfare := 0.0

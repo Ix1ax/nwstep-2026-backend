@@ -23,9 +23,10 @@ func NewModule(log zerolog.Logger) *Module {
 	handler := transport.NewHandler(manager, log)
 	if dir := os.Getenv("XENO_DATA_DIR"); dir != "" {
 		if err := manager.Restore(dir, handler.BroadcastSnapshot); err != nil {
-			log.Error().Err(err).Msg("Cannot restore research checkpoint")
+			log.Error().Err(err).Msg("Cannot restore research checkpoint; automatic saves disabled to preserve recovery data")
+		} else {
+			manager.StartCheckpoints(dir)
 		}
-		manager.StartCheckpoints(dir)
 	}
 	return &Module{
 		Manager: manager,
