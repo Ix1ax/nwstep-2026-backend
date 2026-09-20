@@ -38,6 +38,7 @@ func NewModule(log zerolog.Logger) *Module {
 func (m *Module) RegisterV2(router fiber.Router) {
 	// 1. Каталог миров со справочными данными NASA (GET /api/v2/worlds)
 	router.Get("/worlds", m.Handler.GetWorlds)
+	router.Get("/demo", m.Handler.GetDemo)
 
 	// 2. Управление экспериментами (/api/v2/experiments)
 	expGroup := router.Group("/experiments")
