@@ -25,8 +25,9 @@ type AppConfig struct {
 
 type ServerConfig struct {
 	Port         int           `env:"SERVER_PORT" envDefault:"8080"`
-	ReadTimeout  time.Duration `env:"SERVER_READ_TIMEOUT" envDefault:"15s"`
-	WriteTimeout time.Duration `env:"SERVER_WRITE_TIMEOUT" envDefault:"15s"`
+	ReadTimeout  time.Duration `env:"SERVER_READ_TIMEOUT" envDefault:"0s"`
+	WriteTimeout time.Duration `env:"SERVER_WRITE_TIMEOUT" envDefault:"0s"`
+	RateLimitMax int           `env:"RATE_LIMIT_MAX" envDefault:"600"`
 }
 
 type DatabaseConfig struct {

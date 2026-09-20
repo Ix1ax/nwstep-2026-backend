@@ -3,6 +3,7 @@ package middleware
 import (
 	"time"
 
+	"github.com/gofiber/contrib/websocket"
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/limiter"
 )
@@ -12,9 +13,12 @@ func NewRateLimitMiddleware(max int, expiration time.Duration) fiber.Handler {
 		Max:        max,
 		Expiration: expiration,
 		Next: func(c *fiber.Ctx) bool {
-			// Don't rate limit healthchecks, metrics, and swagger
+			// Don't rate limit healthchecks, metrics, swagger, and websocket upgrades
 			path := c.Path()
-			return path == "/health" || path == "/ready" || path == "/metrics" || path == "/swagger"
+			if path == "/health" || path == "/ready" || path == "/metrics" || path == "/swagger" {
+				return true
+			}
+			return websocket.IsWebSocketUpgrade(c)
 		},
 		KeyGenerator: func(c *fiber.Ctx) string {
 			return c.IP() // Per-IP rate limiting

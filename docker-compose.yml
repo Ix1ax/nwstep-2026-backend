@@ -69,6 +69,8 @@ services:
       - "3000:3000"
     volumes:
       - ./monitoring/grafana/datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml
+      - ./monitoring/grafana/dashboards.yml:/etc/grafana/provisioning/dashboards/dashboards.yml
+      - ./monitoring/grafana/dashboards/definitions:/etc/grafana/provisioning/dashboards/definitions
       - grafana_data:/var/lib/grafana
     networks:
       - app-network

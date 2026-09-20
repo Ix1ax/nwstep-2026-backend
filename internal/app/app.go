@@ -39,7 +39,7 @@ func NewApp(cfg *config.Config, db *sqlx.DB, rdb *redis.Client, s3 *storage.S3St
 	fiberApp.Use(middleware.NewRecoverMiddleware(log))
 	fiberApp.Use(middleware.NewCorsMiddleware())
 	fiberApp.Use(middleware.NewLoggerMiddleware(log))
-	fiberApp.Use(middleware.NewRateLimitMiddleware(600, 1*time.Minute))
+	fiberApp.Use(middleware.NewRateLimitMiddleware(cfg.Server.RateLimitMax, 1*time.Minute))
 	fiberApp.Use(middleware.NewPrometheusMiddleware(fiberApp, cfg.App.Name))
 
 	return &App{

@@ -1,0 +1,12 @@
+apiVersion: 1
+
+providers:
+  - name: 'XenoChoice Dashboards'
+    orgId: 1
+    folder: 'XenoChoice'
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 5
+    allowUiUpdates: true
+    options:
+      path: /etc/grafana/provisioning/dashboards/definitions

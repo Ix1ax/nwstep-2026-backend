@@ -365,6 +365,10 @@ func (h *Handler) HandleWebSocketStream(c *websocket.Conn) {
 		c.Close()
 	}()
 
+	// Отключаем таймауты чтения/записи для постоянного WebSocket-стрима
+	_ = c.SetReadDeadline(time.Time{})
+	_ = c.SetWriteDeadline(time.Time{})
+
 	// Отправляем начальный снимок
 	if exp, err := h.manager.GetExperiment(expID); err == nil {
 		exp = exp.View()
