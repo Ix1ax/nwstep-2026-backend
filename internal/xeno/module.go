@@ -23,9 +23,10 @@ func NewModule(log zerolog.Logger) *Module {
 	handler := transport.NewHandler(manager, log)
 	if dir := os.Getenv("XENO_DATA_DIR"); dir != "" {
 		if err := manager.Restore(dir, handler.BroadcastSnapshot); err != nil {
-			log.Error().Err(err).Msg("Cannot restore research checkpoint")
+			log.Error().Err(err).Msg("Cannot restore research checkpoint; automatic saves disabled to preserve recovery data")
+		} else {
+			manager.StartCheckpoints(dir)
 		}
-		manager.StartCheckpoints(dir)
 	}
 	return &Module{
 		Manager: manager,
@@ -43,6 +44,8 @@ func (m *Module) RegisterV2(router fiber.Router) {
 	expGroup.Post("/", m.Handler.CreateExperiment)
 	expGroup.Get("/", m.Handler.ListExperiments)
 	expGroup.Post("/import", m.Handler.ImportExperiment)
+	router.Get("/imports/:id", m.Handler.GetImport)
+	router.Delete("/imports/:id", m.Handler.CancelImport)
 
 	expGroup.Get("/:id", m.Handler.GetExperiment)
 	expGroup.Get("/:id/compare", m.Handler.Compare)

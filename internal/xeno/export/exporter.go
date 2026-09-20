@@ -140,6 +140,10 @@ func ImportJSON(data []byte) (*ExportBundle, error) {
 		return nil, fmt.Errorf("invalid seed")
 	}
 	validator := experiments.NewManager(zerolog.Nop()).CreateExperiment("validation", bundle.World.ID, bundle.Mode, seed, nil)
+	for _, ch := range bundle.FinalSnapshot.Channels {
+		cp := ch
+		validator.State.Channels[ch.ID] = &cp
+	}
 	lastTick := int64(0)
 	for _, it := range bundle.Interventions {
 		if it == nil || it.Tick < 1 || it.Tick < lastTick || it.Tick > bundle.FinalSnapshot.Tick+1 {

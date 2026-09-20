@@ -4,13 +4,13 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v2"
-	"github.com/jmoiron/sqlx"
-	"github.com/redis/go-redis/v9"
-	"github.com/rs/zerolog"
 	"github.com/ix1ax/nwstep-hackaton-2026/golang/pkg/config"
 	"github.com/ix1ax/nwstep-hackaton-2026/golang/pkg/middleware"
 	"github.com/ix1ax/nwstep-hackaton-2026/golang/pkg/response"
 	"github.com/ix1ax/nwstep-hackaton-2026/golang/pkg/storage"
+	"github.com/jmoiron/sqlx"
+	"github.com/redis/go-redis/v9"
+	"github.com/rs/zerolog"
 )
 
 type App struct {
@@ -31,7 +31,7 @@ func NewApp(cfg *config.Config, db *sqlx.DB, rdb *redis.Client, s3 *storage.S3St
 			}
 			return response.Error(c, code, "HTTP_ERROR", err.Error())
 		},
-		BodyLimit:    10 * 1024 * 1024, // 10MB
+		BodyLimit:    20 * 1024 * 1024, // Match the recording upload limit in the UI and proxy
 		ReadTimeout:  cfg.Server.ReadTimeout,
 		WriteTimeout: cfg.Server.WriteTimeout,
 	})
@@ -39,7 +39,7 @@ func NewApp(cfg *config.Config, db *sqlx.DB, rdb *redis.Client, s3 *storage.S3St
 	fiberApp.Use(middleware.NewRecoverMiddleware(log))
 	fiberApp.Use(middleware.NewCorsMiddleware())
 	fiberApp.Use(middleware.NewLoggerMiddleware(log))
-	fiberApp.Use(middleware.NewRateLimitMiddleware(100, 1*time.Minute))
+	fiberApp.Use(middleware.NewRateLimitMiddleware(600, 1*time.Minute))
 	fiberApp.Use(middleware.NewPrometheusMiddleware(fiberApp, cfg.App.Name))
 
 	return &App{

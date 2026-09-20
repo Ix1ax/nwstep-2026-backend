@@ -48,3 +48,16 @@ func TestEngine_DeterminismAndChecksum_AllWorlds(t *testing.T) {
 		})
 	}
 }
+
+func TestSurvivalRateIncludesInoculatedFounders(t *testing.T) {
+	exp := experiments.NewManager(zerolog.Nop()).CreateExperiment("survival", "earth", model.ModeEvolutionary, 42, nil)
+	if _, err := exp.AddIntervention(model.Intervention{Type: "add_inoculum", Value: 35, Params: map[string]float64{"count": 6}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := exp.SendCommand("step", 1); err != nil {
+		t.Fatal(err)
+	}
+	if got := exp.View().LatestSnapshot.Metrics.SurvivalRate; got != 100 {
+		t.Fatalf("all founders alive: survival=%g, want 100", got)
+	}
+}

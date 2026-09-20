@@ -1,0 +1,10 @@
+./ecdsa.go
+./eddsa.go
+./get.go
+./given.go
+./jwks.go
+./keyfunc.go
+./multiple.go
+./oct.go
+./options.go
+./rsa.go

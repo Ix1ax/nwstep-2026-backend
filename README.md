@@ -1,32 +1,71 @@
-# NWSTEP Hackathon 2026 API
+# XenoChoice — симуляционный API
 
-Complete Go Fiber v2 boilerplate with Modular Monolith architecture.
+Go 1.26 + Fiber v2. Детерминированная лаборатория небиологических сообществ на Земле, Марсе и Венере. Основной контракт фронтенда — `/api/v2`.
 
-## Quick Start
-```bash
-make docker-up
+## Локальный запуск без внешних сервисов
+
+```sh
+go run ./cmd/lab
 ```
 
-## Structure
-- `cmd/server`: Application entrypoint
-- `internal/`: Domain modules (auth, user, ws, upload)
-- `pkg/`: Shared utilities (config, database, logger, middleware, response, storage)
-- `migrations/`: Database migrations
+По умолчанию API слушает `127.0.0.1:8081`, health — `/health`. Для другого адреса используйте `LAB_ADDR`. Для сохранения между запусками задайте `XENO_DATA_DIR`:
 
-## API Endpoints
-| Method | Path | Description | Protected |
-|---|---|---|---|
-| POST | `/api/v1/auth/register` | Register user | No |
-| POST | `/api/v1/auth/login` | Login user | No |
-| POST | `/api/v1/auth/refresh` | Refresh token | No |
-| GET | `/api/v1/auth/me` | Current user | Yes |
-| GET | `/api/v1/users` | List users | No |
-| GET | `/api/v1/users/:id` | Get user | No |
-| PUT | `/api/v1/users/:id` | Update user | Yes |
-| GET | `/api/v1/ws` | WebSocket | Token query |
-| POST | `/api/v1/upload` | Upload file | Yes |
-| GET | `/api/v1/upload/:id` | Get file URL | No |
-| DELETE | `/api/v1/upload/:id` | Delete file | Yes |
+```sh
+XENO_DATA_DIR=./tmp/research go run ./cmd/lab
+```
 
-## Deployment
-Use `docker-compose.prod.yml` for production deployment.
+Checkpoint записывается каждые 5 секунд в `research.json`. При восстановлении движок заново исполняет журнал и проверяет checksum; эксперименты возвращаются на паузе, завершённые — в статусе completed. Последние изменения после checkpoint могут потеряться при остановке. Если восстановление не прошло, автоматическая запись отключается, чтобы сохранить повреждённый файл для разбора; ошибка выводится в лог. Длинное восстановление может занимать значительное время.
+
+В соседнем `frontend` запускайте `XENOCHOICE_ORIGIN=http://127.0.0.1:8081 pnpm dev`, используя `VITE_XENOCHOICE_API_URL=/api/v2`.
+
+## Архитектура
+
+- `internal/xeno/model`: миры, особи, геномы, колонии, каналы, метрики и параметры.
+- `environment`: приток энергии и свойства каналов для каждого мира.
+- `engine`: дискретный такт — воздействия, доставка ресурса, приток/расход, память, выбор, рост/деление, сигналы, метрики и checksum.
+- `behavior`: реактивные правила и оценка альтернатив STORE/TRANSFER/GROW/DIVIDE. Память влияет на приоритет безопасности.
+- `evolution`: наследование, мутации, размещение потомков, дочерние колонии.
+- `prng`: воспроизводимые потоки SplitMix64.
+- `experiments`: жизненный цикл, журнал, replay/preview, сохранение.
+- `transport`, `export`: REST, WebSocket, JSON/CSV и фоновые задания импорта.
+
+Одинаковые версия модели, параметры, мир, seed и журнал дают воспроизводимый опыт. Один опыт ограничен 2000 тактами. Это гипотетическая модель в условных единицах; она не доказывает сознание или физическую достоверность живых организмов. Оценщик пока допускает чтение энергии соседа при отсутствии доставленного сигнала — ограничение экспериментов с локальным знанием и задержками.
+
+## Основные маршруты
+
+| Метод | Путь относительно `/api/v2` | Назначение |
+|---|---|---|
+| GET | `/worlds` | Каталог миров и параметры |
+| GET / POST | `/experiments` | Список / создание |
+| GET / DELETE | `/experiments/:id` | Получить / удалить |
+| GET | `/experiments/:id/state` | Снимок |
+| POST | `/experiments/:id/commands` | start, pause, resume, step, setSpeed |
+| POST | `/experiments/:id/interventions` | Условия, воздействия, зародыши, связи, режим |
+| GET | `/experiments/:id/stream` | WebSocket со снимками |
+| GET | `/experiments/:id/metrics` | История метрик |
+| GET | `/experiments/:id/colonies/:colonyId` | Колония и особи |
+| GET | `/experiments/:id/individuals/:individualId` | Особь и объяснение решения |
+| GET | `/experiments/:id/compare?ticks=300` | Три режима, диапазон 1–600 тактов |
+| GET | `/experiments/:id/export?format=json` | JSON или CSV |
+| POST | `/experiments/:id/replay` | Повторный расчёт до targetTick |
+| GET | `/experiments/:id/preview?tick=20` | Просмотр без изменения исходного опыта |
+| POST | `/experiments/import` | Импорт JSON, ответ 202 с ID задания |
+| GET / DELETE | `/imports/:id` | Прогресс / отмена импорта |
+
+REST обычно возвращает `{success,data}`; экспорт — непосредственно файл. JSON использует camelCase. Основной модуль v2 не использует пользовательскую авторизацию и не разделяет опыты по владельцам: это общая демонстрационная лаборатория, а не многопользовательский сервис с приватными данными.
+
+## Проверки
+
+```sh
+go test ./...
+go vet ./...
+go test -race ./internal/xeno/experiments -run 'TestCheckpoint|TestConcurrentReaders'
+```
+
+Длинный тест на 2000 тактов может идти несколько минут. При ограничениях на системный кэш используйте `GOCACHE=/tmp/xeno-go-cache`.
+
+## Полный сервер и Docker
+
+`go run ./cmd/server` и Dockerfile запускают полный сервер на порту из конфигурации (обычно 8080): ему нужны PostgreSQL, Redis и MinIO, параметры — в `.env.example`. Эти сервисы относятся к инфраструктуре шаблона; состояние лаборатории v2 хранится в памяти и файловом checkpoint, а не в PostgreSQL. Существуют также старые модули choice/colony/ws в `/api/v1`; текущий фронтенд использует v2. Swagger остался от шаблона и не является полной спецификацией v2.
+
+`docker-compose.prod.yml` подключает постоянный том `research_data`. Перед защитой отдельно проверьте реально опубликованную версию, HTTPS, WS-прокси и восстановление тома после перезапуска.

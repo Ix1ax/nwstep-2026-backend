@@ -283,9 +283,10 @@ func (eng *Engine) Step(st *StepState) (*model.StateSnapshot, *model.MetricsSnap
 	}
 
 	sortedChannelIDs := getSortedChannelIDs(st.Channels)
-	allChannels := make([]*model.Channel, 0, len(sortedChannelIDs))
+	outgoing := make(map[string][]*model.Channel)
 	for _, id := range sortedChannelIDs {
-		allChannels = append(allChannels, st.Channels[id])
+		ch := st.Channels[id]
+		outgoing[ch.FromID] = append(outgoing[ch.FromID], ch)
 	}
 
 	// ─────────────────────────────────────────────────────────────
@@ -310,7 +311,7 @@ func (eng *Engine) Step(st *StepState) (*model.StateSnapshot, *model.MetricsSnap
 			ind,
 			st.Mode,
 			t,
-			allChannels,
+			outgoing[id],
 			signalsForInd,
 			neighborEnergies,
 			len(sortedIndIDs),
@@ -341,7 +342,7 @@ func (eng *Engine) Step(st *StepState) (*model.StateSnapshot, *model.MetricsSnap
 		case model.ActionTransfer:
 			targetID := trace.SelectedTarget
 			var ch *model.Channel
-			for _, c := range allChannels {
+			for _, c := range outgoing[id] {
 				if c.FromID == ind.ID && c.ToID == targetID && c.Enabled {
 					ch = c
 					break
@@ -606,10 +607,14 @@ func (eng *Engine) Step(st *StepState) (*model.StateSnapshot, *model.MetricsSnap
 	var currentStored float64
 	var livingCount int
 	var initialLivingCount int
+	var founderCount int
 	var sumWelfare float64
 
 	for _, id := range getSortedIndividualIDs(st.Individuals) {
 		ind := st.Individuals[id]
+		if ind.ParentID == nil {
+			founderCount++
+		}
 		if ind.Alive {
 			livingCount++
 			currentStored += (ind.Energy + eng.params.KB*ind.Biomass)
@@ -652,8 +657,9 @@ func (eng *Engine) Step(st *StepState) (*model.StateSnapshot, *model.MetricsSnap
 	}
 
 	survivalRate := 0.0
-	if st.InitialCount > 0 {
-		survivalRate = (float64(initialLivingCount) / float64(st.InitialCount)) * 100.0
+	if founderCount > 0 {
+		// Include researcher-inoculated founders in both numerator and denominator.
+		survivalRate = (float64(initialLivingCount) / float64(founderCount)) * 100.0
 	}
 
 	meanWelfare := 0.0

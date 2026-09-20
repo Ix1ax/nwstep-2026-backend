@@ -1,6 +1,7 @@
 package experiments
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -24,25 +25,28 @@ var (
 
 // Experiment инкапсулирует симуляцию одного мира и его сообществ (ТЗ v2)
 type Experiment struct {
-	mu              sync.RWMutex
-	ID              string                   `json:"id"`
-	Name            string                   `json:"name"`
-	WorldID         string                   `json:"worldId"`
-	Mode            model.Mode               `json:"mode"`
-	Status          model.ExperimentStatus   `json:"status"`
-	Seed            uint64                   `json:"seed"`
-	Speed           int                      `json:"speed"` // 1x, 2x, 5x
-	Parameters      model.Parameters         `json:"parameters"`
-	Interventions   []*model.Intervention    `json:"interventions"`
-	State           *engine.StepState        `json:"-"`
-	Engine          *engine.Engine           `json:"-"`
-	InitialSnapshot *model.StateSnapshot     `json:"initialSnapshot"`
-	LatestSnapshot  *model.StateSnapshot     `json:"latestSnapshot"`
-	MetricsHistory  []*model.MetricsSnapshot `json:"-"`
-	StopChan        chan struct{}            `json:"-"`
-	Log             zerolog.Logger           `json:"-"`
-	CreatedAt       time.Time                `json:"createdAt"`
-	UpdatedAt       time.Time                `json:"updatedAt"`
+	previewMu         sync.Mutex
+	previewExperiment *Experiment
+	previewJournal    string
+	mu                sync.RWMutex
+	ID                string                   `json:"id"`
+	Name              string                   `json:"name"`
+	WorldID           string                   `json:"worldId"`
+	Mode              model.Mode               `json:"mode"`
+	Status            model.ExperimentStatus   `json:"status"`
+	Seed              uint64                   `json:"seed"`
+	Speed             int                      `json:"speed"` // 1x, 2x, 5x
+	Parameters        model.Parameters         `json:"parameters"`
+	Interventions     []*model.Intervention    `json:"interventions"`
+	State             *engine.StepState        `json:"-"`
+	Engine            *engine.Engine           `json:"-"`
+	InitialSnapshot   *model.StateSnapshot     `json:"initialSnapshot"`
+	LatestSnapshot    *model.StateSnapshot     `json:"latestSnapshot"`
+	MetricsHistory    []*model.MetricsSnapshot `json:"-"`
+	StopChan          chan struct{}            `json:"-"`
+	Log               zerolog.Logger           `json:"-"`
+	CreatedAt         time.Time                `json:"createdAt"`
+	UpdatedAt         time.Time                `json:"updatedAt"`
 
 	loopGeneration uint64
 	broadcastFunc  func(snapshot *model.StateSnapshot, expID string)
@@ -217,6 +221,9 @@ func (exp *Experiment) SendCommand(cmd string, speed int) error {
 		exp.UpdatedAt = time.Now()
 
 	case "step":
+		if exp.State.Tick >= 2000 {
+			return errors.New("experiment completed")
+		}
 		if exp.Status == model.StatusRunning {
 			return errors.New("cannot step while running")
 		}
@@ -224,6 +231,9 @@ func (exp *Experiment) SendCommand(cmd string, speed int) error {
 		if err != nil {
 			exp.Status = model.StatusError
 			return err
+		}
+		if snapshot.Tick >= 2000 {
+			exp.Status = model.StatusCompleted
 		}
 		snapshot.Status = exp.Status
 		exp.LatestSnapshot = snapshot
@@ -254,6 +264,10 @@ func (exp *Experiment) SendCommand(cmd string, speed int) error {
 
 // Replay воспроизводит симуляцию от такт 0 до targetTick и проверяет контрольную сумму (раздел 14 ТЗ v2)
 func (exp *Experiment) Replay(targetTick int64) (*model.StateSnapshot, error) {
+	return exp.ReplayContext(context.Background(), targetTick, nil)
+}
+
+func (exp *Experiment) ReplayContext(ctx context.Context, targetTick int64, progress func(int64)) (*model.StateSnapshot, error) {
 	if targetTick < 0 || targetTick > 2000 {
 		return nil, errors.New("targetTick must be between 0 and 2000")
 	}
@@ -307,12 +321,19 @@ func (exp *Experiment) Replay(targetTick int64) (*model.StateSnapshot, error) {
 		NextColonyNum: len(colMap) + 1,
 	}
 
+	initSnapshot.Mode = exp.Mode
+	initSnapshot.Flow = 1
+	initSnapshot.Noise = 1
+	initSnapshot.Interventions = exp.Interventions
 	var latestSnap *model.StateSnapshot = initSnapshot
 	var latestMetrics *model.MetricsSnapshot = &initSnapshot.Metrics
 	metricsHistory := make([]*model.MetricsSnapshot, 0, targetTick+1)
 	metricsHistory = append(metricsHistory, latestMetrics)
 
 	for stState.Tick < targetTick {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		snap, m, err := eng.Step(stState)
 		if err != nil {
 			return nil, fmt.Errorf("replay failed at tick %d: %w", stState.Tick, err)
@@ -320,11 +341,17 @@ func (exp *Experiment) Replay(targetTick int64) (*model.StateSnapshot, error) {
 		latestSnap = snap
 		latestMetrics = m
 		metricsHistory = append(metricsHistory, m)
+		if progress != nil {
+			progress(stState.Tick)
+		}
 	}
 
-	latestSnap.Status = model.StatusPaused
-	latestSnap.Mode = stState.Mode
 	exp.Status = model.StatusPaused
+	if targetTick >= 2000 {
+		exp.Status = model.StatusCompleted
+	}
+	latestSnap.Status = exp.Status
+	latestSnap.Mode = stState.Mode
 	exp.State = stState
 	exp.LatestSnapshot = latestSnap
 	exp.MetricsHistory = metricsHistory
@@ -504,14 +531,30 @@ func ValidMode(mode model.Mode) bool {
 
 // Preview is read-only: scrubbing a recording never rewinds the source experiment.
 func (exp *Experiment) Preview(tick int64) (*model.StateSnapshot, error) {
+	exp.previewMu.Lock()
+	defer exp.previewMu.Unlock()
 	v := exp.View()
 	if tick < 0 || tick > v.LatestSnapshot.Tick {
 		return nil, errors.New("tick outside recording")
 	}
-	tmp := NewManager(zerolog.Nop()).CreateExperiment(v.Name, v.WorldID, v.Mode, v.Seed, nil)
-	tmp.Parameters = v.Parameters
-	tmp.Interventions = v.Interventions
-	return tmp.Replay(tick)
+	journal, _ := json.Marshal(v.Interventions)
+	tmp := exp.previewExperiment
+	if tmp == nil || string(journal) != exp.previewJournal || tick < tmp.State.Tick {
+		tmp = NewManager(zerolog.Nop()).CreateExperiment(v.Name, v.WorldID, v.Mode, v.Seed, nil)
+		tmp.Parameters = v.Parameters
+		tmp.Interventions = v.Interventions
+		if _, err := tmp.Replay(0); err != nil {
+			return nil, err
+		}
+		exp.previewExperiment = tmp
+		exp.previewJournal = string(journal)
+	}
+	for tmp.State.Tick < tick {
+		if err := tmp.SendCommand("step", 1); err != nil {
+			return nil, err
+		}
+	}
+	return tmp.View().LatestSnapshot, nil
 }
 func (m *Manager) Remove(id string) {
 	m.mu.Lock()
@@ -520,4 +563,16 @@ func (m *Manager) Remove(id string) {
 		exp.SendCommand("pause", 1)
 		delete(m.experiments, id)
 	}
+}
+
+// Adopt publishes a fully restored experiment only after its checksum has passed.
+func (m *Manager) Adopt(exp *Experiment, broadcast func(*model.StateSnapshot, string)) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if len(m.experiments) >= 100 {
+		return errors.New("experiment limit reached")
+	}
+	exp.broadcastFunc = broadcast
+	m.experiments[exp.ID] = exp
+	return nil
 }
