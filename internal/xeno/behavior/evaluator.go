@@ -56,6 +56,7 @@ func (e *Evaluator) EvaluateDecisions(
 		neighborEnergies,
 		currentPopulation,
 		hasFreeSpaceForChild,
+		nil,
 	)
 }
 
@@ -133,6 +134,7 @@ func (e *Evaluator) evaluateAdaptive(
 	neighborEnergies map[string]float64,
 	currentPopulation int,
 	hasFreeSpaceForChild bool,
+	detail *Explanation,
 ) *model.DecisionTrace {
 	// Веса генома
 	wE := ind.Genome.WeightEnergy
@@ -167,6 +169,14 @@ func (e *Evaluator) evaluateAdaptive(
 		return wE*reserve - wD*deficit + wC*relief + wR*repro - wCost*cost
 	}
 
+	if detail != nil {
+		detail.Weights = []float64{wE, wD, wC, wR, wCost}
+	}
+	record := func(action model.ActionType, reserve, deficit, relief, repro, cost float64) {
+		if detail != nil {
+			detail.Terms[action] = []float64{wE * reserve, -wD * deficit, wC * relief, wR * repro, -wCost * cost}
+		}
+	}
 	reserveTarget := e.params.ReserveTarget
 	eMax := e.params.EMax
 	twoTicksMaint := 2.0 * e.params.MaintenancePowerPm * e.params.Dt
@@ -175,6 +185,7 @@ func (e *Evaluator) evaluateAdaptive(
 	resStore := clip(ind.Energy/reserveTarget, 0.0, 1.0)
 	defStore := clip(math.Max(0.0, twoTicksMaint-ind.Energy)/twoTicksMaint, 0.0, 1.0)
 	scoreStore := calcScore(resStore, defStore, 0.0, 0.0, 0.0)
+	record(model.ActionStore, resStore, defStore, 0, 0, 0)
 
 	scores := map[model.ActionType]float64{
 		model.ActionStore:    round(scoreStore, 6),
@@ -232,6 +243,7 @@ func (e *Evaluator) evaluateAdaptive(
 
 		scoreT := calcScore(resTransfer, defTransfer, relief, 0.0, costTransfer)
 		if scoreT > bestTransferScore {
+			record(model.ActionTransfer, resTransfer, defTransfer, relief, 0, costTransfer)
 			bestTransferScore = scoreT
 			bestTransferTarget = ch.ToID
 		}
@@ -258,6 +270,7 @@ func (e *Evaluator) evaluateAdaptive(
 		costGrow := clip((growBudget*(1.0-e.params.EtaGrowth))/eMax, 0.0, 1.0)
 
 		scoreGrow := calcScore(resGrow, defGrow, 0.0, reproGrow, costGrow)
+		record(model.ActionGrow, resGrow, defGrow, 0, reproGrow, costGrow)
 		scores[model.ActionGrow] = round(scoreGrow, 6)
 
 		if (scoreGrow-scoreStore >= hThreshold) && scoreGrow > bestScore {
@@ -283,6 +296,7 @@ func (e *Evaluator) evaluateAdaptive(
 		costDivide := clip(e.params.DivisionCost/eMax, 0.0, 1.0)
 
 		scoreDivide := calcScore(resDivide, defDivide, 0.0, reproDivide, costDivide)
+		record(model.ActionDivide, resDivide, defDivide, 0, reproDivide, costDivide)
 		scores[model.ActionDivide] = round(scoreDivide, 6)
 
 		if (scoreDivide-scoreStore >= hThreshold) && scoreDivide > bestScore {
@@ -292,6 +306,41 @@ func (e *Evaluator) evaluateAdaptive(
 		}
 	}
 
+	if detail != nil {
+		if _, ok := detail.Terms[model.ActionTransfer]; !ok {
+			if availableBudget <= 0 {
+				detail.Blocked[model.ActionTransfer] = fmt.Sprintf("Энергия %.3f не превышает резерв двух тактов %.3f.", ind.Energy, twoTicksMaint)
+			} else {
+				detail.Blocked[model.ActionTransfer] = "Нет доступного исходящего канала с положительной мощностью."
+			}
+		}
+		if _, ok := detail.Terms[model.ActionGrow]; !ok {
+			if ind.Biomass >= e.params.BSplit {
+				detail.Blocked[model.ActionGrow] = fmt.Sprintf("Структура %.2f уже достигла порога %.2f: дальнейший рост недоступен.", ind.Biomass, e.params.BSplit)
+			} else {
+				detail.Blocked[model.ActionGrow] = "Нет доступного энергетического бюджета для роста."
+			}
+		}
+		if !dividePossible {
+			reasons := ""
+			if ind.Biomass < e.params.BSplit {
+				reasons += fmt.Sprintf("Структура %.2f < %.2f. ", ind.Biomass, e.params.BSplit)
+			}
+			if ind.Energy < reqEnergy {
+				reasons += fmt.Sprintf("Энергия %.2f < %.2f. ", ind.Energy, reqEnergy)
+			}
+			if tick-ind.LastDivisionTick < e.params.DivisionCooldown {
+				reasons += "Ещё не истёк период между делениями. "
+			}
+			if currentPopulation >= e.params.MaxPopulation {
+				reasons += "Достигнут лимит популяции. "
+			}
+			if !hasFreeSpaceForChild {
+				reasons += "Нет места для потомка."
+			}
+			detail.Blocked[model.ActionDivide] = reasons
+		}
+	}
 	trace := &model.DecisionTrace{
 		IndividualID:   ind.ID,
 		Mode:           mode,
@@ -329,4 +378,18 @@ func clip(val, min, max float64) float64 {
 func round(val float64, decimals int) float64 {
 	pow := math.Pow(10, float64(decimals))
 	return math.Round(val*pow) / pow
+}
+
+// Explanation is opt-in instrumentation; regular snapshots and replay hashes stay unchanged.
+type Explanation struct {
+	Weights []float64                      `json:"weights"`
+	Terms   map[model.ActionType][]float64 `json:"terms"`
+	Blocked map[model.ActionType]string    `json:"blocked"`
+}
+
+// Explain instruments the adaptive scoring path used by adaptive and evolutionary modes.
+func (e *Evaluator) Explain(ind *model.Individual, mode model.Mode, tick int64, channels []*model.Channel, signals map[string]*model.SignalMessage, energies map[string]float64, population int, space bool) (*model.DecisionTrace, *Explanation) {
+	detail := &Explanation{Terms: make(map[model.ActionType][]float64), Blocked: make(map[model.ActionType]string)}
+	trace := e.evaluateAdaptive(ind, mode, tick, channels, signals, energies, population, space, detail)
+	return trace, detail
 }

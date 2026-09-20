@@ -17,6 +17,9 @@ import (
 
 // Engine управляет детерминированным шагом симуляции мира
 type Engine struct {
+	// ObserveDecision receives a value copy before action execution, only in narrated runs.
+	ObserveDecision func(model.Individual, *model.DecisionTrace, *behavior.Explanation)
+
 	params    model.Parameters
 	evaluator *behavior.Evaluator
 	mutator   *evolution.Mutator
@@ -317,6 +320,10 @@ func (eng *Engine) Step(st *StepState) (*model.StateSnapshot, *model.MetricsSnap
 			len(sortedIndIDs),
 			true,
 		)
+		if eng.ObserveDecision != nil && st.Mode != model.ModeReactive {
+			_, explanation := eng.evaluator.Explain(ind, st.Mode, t, outgoing[id], signalsForInd, neighborEnergies, len(sortedIndIDs), true)
+			eng.ObserveDecision(*ind, trace, explanation)
+		}
 		decisions[id] = trace
 		ind.LastDecision = trace
 		actionCounts[trace.SelectedAction]++
